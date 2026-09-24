@@ -1,4 +1,4 @@
-# PDF Highlight
+# Supervillian Highlighter
 
 A Preview-style highlighter for research PDFs. Open a file, mark text with custom RGB colors, add notes, and download an annotated PDF. Every edit is saved in the browser.
 

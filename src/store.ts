@@ -16,6 +16,7 @@ function emptySession(): Session {
     color: { ...DEFAULT_COLOR },
     marks: [],
     docId: '',
+    zoom: 100,
   }
 }
 
@@ -31,6 +32,7 @@ export function loadSession(): Session {
       color: parsed.color ?? { ...DEFAULT_COLOR },
       marks: Array.isArray(parsed.marks) ? parsed.marks : [],
       docId: parsed.docId ?? '',
+      zoom: typeof parsed.zoom === 'number' ? parsed.zoom : 100,
     }
   } catch {
     return emptySession()

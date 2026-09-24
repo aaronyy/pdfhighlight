@@ -19,9 +19,9 @@ export function colorFromHex(hex: string): Color {
   }
 }
 
-function pageScale(pageEl: HTMLElement, viewport: PageViewport): number {
-  const box = pageEl.getBoundingClientRect()
-  return box.width / viewport.width
+function contentBox(pageEl: HTMLElement): DOMRect {
+  const canvas = pageEl.querySelector<HTMLElement>('.page-canvas')
+  return (canvas ?? pageEl).getBoundingClientRect()
 }
 
 export function clientPointToPdf(
@@ -30,10 +30,11 @@ export function clientPointToPdf(
   clientX: number,
   clientY: number,
 ): { x: number; y: number } {
-  const box = pageEl.getBoundingClientRect()
-  const scale = pageScale(pageEl, viewport)
-  const vx = (clientX - box.left) / scale
-  const vy = (clientY - box.top) / scale
+  const box = contentBox(pageEl)
+  const sx = box.width / viewport.width
+  const sy = box.height / viewport.height
+  const vx = (clientX - box.left) / sx
+  const vy = (clientY - box.top) / sy
   const [x, y] = viewport.convertToPdfPoint(vx, vy)
   return { x, y }
 }
@@ -62,8 +63,12 @@ export function pdfPointToCss(
 }
 
 function mergeLineRects(rects: DOMRect[]): DOMRect[] {
-  const items = [...rects]
-    .filter((r) => r.width > 1 && r.height > 1)
+  const raw = [...rects].filter((r) => r.width > 1 && r.height > 1)
+  if (raw.length === 0) return []
+  const heights = raw.map((r) => r.height).sort((a, b) => a - b)
+  const median = heights[Math.floor(heights.length / 2)]
+  const items = raw
+    .filter((r) => r.height > median * 0.55 && r.height < median * 1.85)
     .sort((a, b) => a.top - b.top || a.left - b.left)
 
   const lines: DOMRect[] = []
@@ -77,7 +82,7 @@ function mergeLineRects(rects: DOMRect[]): DOMRect[] {
       Math.abs(last.top + last.height / 2 - (r.top + r.height / 2)) <
       Math.min(last.height, r.height) * 0.65
     const gap = r.left - last.right
-    if (sameLine && gap < Math.max(8, last.height)) {
+    if (sameLine && gap < Math.max(24, last.height * 1.4)) {
       const left = Math.min(last.left, r.left)
       const top = Math.min(last.top, r.top)
       const right = Math.max(last.right, r.right)
@@ -97,7 +102,7 @@ export function selectionToQuads(
   const selection = document.getSelection()
   if (!selection || selection.isCollapsed) return null
 
-  const pageBox = pageEl.getBoundingClientRect()
+  const pageBox = contentBox(pageEl)
   const rects: DOMRect[] = []
   for (let i = 0; i < selection.rangeCount; i++) {
     const range = selection.getRangeAt(i)
@@ -123,10 +128,144 @@ export function selectionToQuads(
     const y = Math.min(a.y, b.y)
     const w = Math.abs(b.x - a.x)
     const h = Math.abs(b.y - a.y)
-    if (w > 0.5 && h > 0.5) quads.push({ x, y, w, h })
+    if (w > 0.4 && h > 0.4) quads.push({ x, y, w, h })
   }
   if (quads.length === 0) return null
   return { quads, text: selection.toString() }
+}
+
+export function rangeToQuads(
+  range: Range,
+  pageEl: HTMLElement,
+  viewport: PageViewport,
+): { quads: Quad[]; text: string } | null {
+  const pageBox = contentBox(pageEl)
+  const rects: DOMRect[] = []
+  for (const rect of range.getClientRects()) {
+    const overlap =
+      rect.right > pageBox.left &&
+      rect.left < pageBox.right &&
+      rect.bottom > pageBox.top &&
+      rect.top < pageBox.bottom
+    if (overlap) rects.push(rect)
+  }
+  if (rects.length === 0) return null
+  const quads: Quad[] = []
+  for (const rect of mergeLineRects(rects)) {
+    const a = clientPointToPdf(pageEl, viewport, rect.left, rect.bottom)
+    const b = clientPointToPdf(pageEl, viewport, rect.right, rect.top)
+    const x = Math.min(a.x, b.x)
+    const y = Math.min(a.y, b.y)
+    const w = Math.abs(b.x - a.x)
+    const h = Math.abs(b.y - a.y)
+    if (w > 0.4 && h > 0.4) quads.push({ x, y, w, h })
+  }
+  if (quads.length === 0) return null
+  return { quads, text: range.toString() }
+}
+
+function isWordChar(ch: string | undefined): boolean {
+  return Boolean(ch && /[\p{L}\p{N}'’\-]/u.test(ch))
+}
+
+function walkText(root: Node, from: Node, dir: 'prev' | 'next'): Text | null {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  walker.currentNode = from
+  const step = () => (dir === 'prev' ? walker.previousNode() : walker.nextNode())
+  let node = step()
+  while (node) {
+    if (node.textContent?.length) return node as Text
+    node = step()
+  }
+  return null
+}
+
+export function wordRangeAt(clientX: number, clientY: number): Range | null {
+  const doc = document as Document & {
+    caretRangeFromPoint?: (x: number, y: number) => Range | null
+    caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null
+  }
+  let range = doc.caretRangeFromPoint?.(clientX, clientY) ?? null
+  if (!range && doc.caretPositionFromPoint) {
+    const pos = doc.caretPositionFromPoint(clientX, clientY)
+    if (pos) {
+      range = document.createRange()
+      range.setStart(pos.offsetNode, pos.offset)
+      range.collapse(true)
+    }
+  }
+  if (!range) return null
+  let startNode = range.startContainer
+  if (startNode.nodeType !== Node.TEXT_NODE) return null
+  const root = startNode.parentElement?.closest('.textLayer')
+  if (!root) return null
+
+  let startOffset = range.startOffset
+  let endNode: Node = startNode
+  let endOffset = range.startOffset
+
+  while (true) {
+    const text = startNode.textContent ?? ''
+    while (startOffset > 0 && isWordChar(text[startOffset - 1])) startOffset--
+    if (startOffset > 0) break
+    const prev = walkText(root, startNode, 'prev')
+    if (!prev) break
+    const last = prev.textContent?.at(-1)
+    if (!isWordChar(last)) break
+    startNode = prev
+    startOffset = prev.textContent?.length ?? 0
+  }
+
+  while (true) {
+    const text = endNode.textContent ?? ''
+    while (endOffset < text.length && isWordChar(text[endOffset])) endOffset++
+    if (endOffset < text.length) break
+    const next = walkText(root, endNode, 'next')
+    if (!next) break
+    if (!isWordChar(next.textContent?.[0])) break
+    endNode = next
+    endOffset = 0
+  }
+
+  if (startNode === endNode && endOffset <= startOffset) return null
+  const out = document.createRange()
+  out.setStart(startNode, startOffset)
+  out.setEnd(endNode, endOffset)
+  return out
+}
+
+export function quadsOverlap(a: Quad, b: Quad): boolean {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+}
+
+export function pointInQuads(x: number, y: number, quads: Quad[]): boolean {
+  return quads.some((q) => x >= q.x && x <= q.x + q.w && y >= q.y && y <= q.y + q.h)
+}
+
+export function markOverlapsQuads(mark: Mark, quads: Quad[]): boolean {
+  return mark.kind !== 'text' && mark.quads.some((mq) => quads.some((q) => quadsOverlap(mq, q)))
+}
+
+export function roughlySameRegion(a: Quad[], b: Quad[]): boolean {
+  if (a.length === 0 || b.length === 0) return false
+  const covered = b.filter((bq) => a.some((aq) => quadsOverlap(aq, bq))).length
+  return covered / b.length >= 0.6
+}
+
+export function collapseStackedMarks(marks: Mark[]): Mark[] {
+  const kept: Mark[] = []
+  for (const mark of marks) {
+    if (mark.kind === 'text') {
+      kept.push(mark)
+      continue
+    }
+    const stacked = kept.some(
+      (other) =>
+        other.kind === mark.kind && other.page === mark.page && markOverlapsQuads(other, mark.quads),
+    )
+    if (!stacked) kept.push(mark)
+  }
+  return kept
 }
 
 export function pageFromNode(node: Node | null): HTMLElement | null {

@@ -13,6 +13,12 @@ GlobalWorkerOptions.workerSrc = workerSrc
 
 const PAGE_GAP = 20
 
+function applyPageMetrics(el: HTMLElement, viewport: PageViewport): void {
+  el.style.width = `${viewport.width}px`
+  el.style.height = `${viewport.height}px`
+  el.style.setProperty('--scale-factor', String(viewport.scale))
+}
+
 export type PageView = {
   pageNumber: number
   page: PDFPageProxy
@@ -29,6 +35,8 @@ export class PdfViewer {
   private thumbs: HTMLElement
   private onPagesReady: (views: PageView[]) => void
   private onVisiblePage: (page: number) => void
+  private fitScale = 1
+  zoom = 1
   scale = 1.2
 
   constructor(
@@ -63,7 +71,8 @@ export class PdfViewer {
     const width = Math.max(320, this.host.clientWidth - 80)
     const first = await this.pdf.getPage(1)
     const base = first.getViewport({ scale: 1 })
-    this.scale = width / base.width
+    this.fitScale = width / base.width
+    this.scale = this.fitScale * this.zoom
 
     for (let n = 1; n <= count; n++) {
       const page = n === 1 ? first : await this.pdf.getPage(n)
@@ -86,7 +95,7 @@ export class PdfViewer {
           if (entry.isIntersecting) void this.renderPage(n)
         }
       },
-      { root: this.host, rootMargin: '400px 0px', threshold: 0.01 },
+      { root: this.host.closest('.viewer') ?? undefined, rootMargin: '400px 0px', threshold: 0.01 },
     )
     for (const view of this.pages.values()) this.observer.observe(view.el)
 
@@ -106,12 +115,36 @@ export class PdfViewer {
     this.pages.get(page)?.el.scrollIntoView({ block: 'start' })
   }
 
+  applyZoom(zoom: number): void {
+    if (!this.pdf) return
+    this.zoom = Math.min(3, Math.max(0.4, zoom))
+    this.scale = this.fitScale * this.zoom
+    const scroller = this.host.closest('.viewer')
+    const keep = scroller ? scroller.scrollTop / Math.max(1, scroller.scrollHeight) : 0
+    for (const task of this.tasks.values()) task.cancel()
+    this.tasks.clear()
+    for (const view of this.pages.values()) {
+      view.viewport = view.page.getViewport({ scale: this.scale })
+      applyPageMetrics(view.el, view.viewport)
+      delete view.el.dataset.rendered
+      view.el.querySelector('.textLayer')?.replaceChildren()
+    }
+    this.onPagesReady([...this.pages.values()])
+    for (const view of this.pages.values()) {
+      const box = view.el.getBoundingClientRect()
+      const hostBox = this.host.getBoundingClientRect()
+      if (box.bottom > hostBox.top - 400 && box.top < hostBox.bottom + 400) {
+        void this.renderPage(view.pageNumber)
+      }
+    }
+    if (scroller) scroller.scrollTop = keep * scroller.scrollHeight
+  }
+
   private createPageShell(n: number, viewport: PageViewport): HTMLElement {
     const el = document.createElement('div')
-    el.className = 'page'
+    el.className = 'page selecting'
     el.dataset.page = String(n)
-    el.style.width = `${viewport.width}px`
-    el.style.height = `${viewport.height}px`
+    applyPageMetrics(el, viewport)
     el.style.marginBottom = `${PAGE_GAP}px`
 
     const canvas = document.createElement('canvas')
@@ -119,7 +152,7 @@ export class PdfViewer {
     const annot = document.createElement('div')
     annot.className = 'annot-layer'
     const text = document.createElement('div')
-    text.className = 'text-layer'
+    text.className = 'textLayer'
     el.append(canvas, annot, text)
     return el
   }
@@ -151,7 +184,7 @@ export class PdfViewer {
     view.el.dataset.rendered = '1'
 
     const canvas = view.el.querySelector('canvas')
-    const textLayerEl = view.el.querySelector<HTMLElement>('.text-layer')
+    const textLayerEl = view.el.querySelector<HTMLElement>('.textLayer')
     if (!canvas || !textLayerEl) return
 
     const outputScale = window.devicePixelRatio || 1

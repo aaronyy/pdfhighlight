@@ -32,13 +32,14 @@ export type Session = {
   color: Color
   marks: Mark[]
   docId: string
+  zoom: number
 }
 
 export const PRESET_COLORS: { name: string; color: Color }[] = [
   { name: 'Yellow', color: { r: 255, g: 214, b: 10 } },
   { name: 'Green', color: { r: 52, g: 199, b: 89 } },
   { name: 'Blue', color: { r: 50, g: 173, b: 230 } },
-  { name: 'Pink', color: { r: 255, g: 55, b: 95 } },
+  { name: 'Pink', color: { r: 255, g: 134, b: 184 } },
   { name: 'Purple', color: { r: 175, g: 82, b: 222 } },
 ]
 
