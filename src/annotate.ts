@@ -180,6 +180,24 @@ function walkText(root: Node, from: Node, dir: 'prev' | 'next'): Text | null {
   return null
 }
 
+function charRect(node: Node, index: number): DOMRect | null {
+  const text = node.textContent ?? ''
+  if (index < 0 || index >= text.length) return null
+  const range = document.createRange()
+  range.setStart(node, index)
+  range.setEnd(node, index + 1)
+  return range.getClientRects()[0] ?? null
+}
+
+function glyphsTouch(a: DOMRect | null, b: DOMRect | null): boolean {
+  if (!a || !b) return false
+  const sameLine = Math.abs(a.top + a.height / 2 - (b.top + b.height / 2)) < Math.max(a.height, b.height) * 0.75
+  const gap = b.left - a.right
+  const back = a.left - b.right
+  const space = Math.min(Math.abs(gap), Math.abs(back))
+  return sameLine && space < Math.max(a.height, b.height, 10) * 0.55
+}
+
 export function wordRangeAt(clientX: number, clientY: number): Range | null {
   const doc = document as Document & {
     caretRangeFromPoint?: (x: number, y: number) => Range | null
@@ -212,6 +230,9 @@ export function wordRangeAt(clientX: number, clientY: number): Range | null {
     if (!prev) break
     const last = prev.textContent?.at(-1)
     if (!isWordChar(last)) break
+    const from = charRect(prev, (prev.textContent?.length ?? 1) - 1)
+    const to = charRect(startNode, 0)
+    if (!glyphsTouch(from, to)) break
     startNode = prev
     startOffset = prev.textContent?.length ?? 0
   }
@@ -223,6 +244,9 @@ export function wordRangeAt(clientX: number, clientY: number): Range | null {
     const next = walkText(root, endNode, 'next')
     if (!next) break
     if (!isWordChar(next.textContent?.[0])) break
+    const from = charRect(endNode, Math.max(0, (endNode.textContent?.length ?? 1) - 1))
+    const to = charRect(next, 0)
+    if (!glyphsTouch(from, to)) break
     endNode = next
     endOffset = 0
   }

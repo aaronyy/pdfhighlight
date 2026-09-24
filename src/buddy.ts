@@ -79,8 +79,8 @@ export class Buddy {
       <div class="buddy-bubble" data-bubble>hi! drop a paper on me</div>
       <button type="button" class="buddy-sticker" title="An. Click to cycle faces.">
         <span class="buddy-faces">
-          <img alt="" width="168" height="168" />
-          <img alt="" width="168" height="168" />
+          <img alt="" width="88" height="88" />
+          <img alt="" width="88" height="88" />
         </span>
         <span class="buddy-tag">An</span>
       </button>
