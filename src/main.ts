@@ -27,7 +27,7 @@ app.innerHTML = `
   <div class="app">
     <header class="toolbar">
       <div class="brand">
-        <img class="brand-mark" src={`${import.meta.env.BASE_URL}favicon-180.png`} alt="" />
+        <img class="brand-mark" src="${import.meta.env.BASE_URL}favicon-180.png" alt="" />
         <div>
           <h1>Supervillian Highlighter</h1>
           <p class="file-name" data-file>No file</p>
