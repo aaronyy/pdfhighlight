@@ -231,7 +231,15 @@ export function wordRangeAt(clientX: number, clientY: number): Range | null {
   const out = document.createRange()
   out.setStart(startNode, startOffset)
   out.setEnd(endNode, endOffset)
+  if (!pointInClientRects(clientX, clientY, out.getClientRects())) return null
   return out
+}
+
+function pointInClientRects(x: number, y: number, rects: DOMRectList): boolean {
+  for (const r of rects) {
+    if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return true
+  }
+  return false
 }
 
 export function quadsOverlap(a: Quad, b: Quad): boolean {

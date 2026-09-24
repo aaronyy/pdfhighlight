@@ -133,56 +133,27 @@ html, body, #app {
   color: #555;
 }
 
-.tool-group button.active,
 .zoom-group button:hover {
   background: var(--panel);
   color: var(--ink);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
-.swatches {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.tool-group button.active,
+.tool-group button.active:hover {
+  background: var(--tool-color, var(--panel));
+  color: var(--tool-ink, var(--ink));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 
-.swatch {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.08);
+.color-picker {
+  width: 28px;
+  height: 22px;
   padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
   cursor: pointer;
-  background: var(--c);
-}
-
-.swatch.active {
-  box-shadow: 0 0 0 2px #fff, 0 0 0 3.5px var(--ink);
-}
-
-.swatch-custom {
-  position: relative;
-  overflow: hidden;
-}
-
-.swatch-custom::after {
-  content: '';
-  position: absolute;
-  inset: 4px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
-}
-
-.swatch-custom input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
-  border: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
 }
 
 .actions { margin-left: auto; }

@@ -16,8 +16,8 @@ import {
 import { downloadAnnotatedPdf } from './export'
 import { PdfViewer, type PageView } from './render'
 import { Buddy } from './buddy'
-import { colorsEqual, loadPdfBytes, loadSession, newId, savePdfBytes, saveSession } from './store'
-import { DEFAULT_COLOR, PRESET_COLORS, type Color, type Mark, type Quad, type Session, type Tool } from './types'
+import { loadPdfBytes, loadSession, newId, savePdfBytes, saveSession } from './store'
+import { DEFAULT_COLOR, type Color, type Mark, type Quad, type Session, type Tool } from './types'
 
 const root = document.querySelector<HTMLDivElement>('#app')
 if (!root) throw new Error('missing #app')
@@ -39,11 +39,7 @@ app.innerHTML = `
         <button type="button" data-tool="strikethrough">Strike</button>
         <button type="button" data-tool="text">Text</button>
       </div>
-      <div class="swatches">
-        <label class="swatch swatch-custom" title="Custom color">
-          <input type="color" data-rgb="picker" />
-        </label>
-      </div>
+      <input type="color" class="color-picker" data-rgb="picker" title="Color" />
       <div class="zoom-group">
         <button type="button" data-zoom="out" aria-label="Zoom out">−</button>
         <button type="button" data-zoom="reset" data-zoom-label>100%</button>
@@ -85,9 +81,8 @@ const downloadBtn = app.querySelector<HTMLButtonElement>('[data-action="download
 const clearBtn = app.querySelector<HTMLButtonElement>('[data-action="clear"]')!
 const zoomLabel = app.querySelector<HTMLButtonElement>('[data-zoom-label]')!
 const fileLabel = app.querySelector<HTMLElement>('[data-file]')!
-const swatches = app.querySelector<HTMLElement>('.swatches')!
 const picker = app.querySelector<HTMLInputElement>('[data-rgb="picker"]')!
-const customSwatch = app.querySelector<HTMLElement>('.swatch-custom')!
+const toolGroup = app.querySelector<HTMLElement>('.tool-group')!
 const buddy = new Buddy(app)
 
 const viewer = new PdfViewer(
@@ -146,38 +141,32 @@ function paintPage(view: PageView): void {
   )
 }
 
+function contrastInk(color: Color): string {
+  const luma = (0.2126 * color.r + 0.7152 * color.g + 0.0722 * color.b) / 255
+  return luma > 0.62 ? '#111111' : '#ffffff'
+}
+
 function renderChrome(): void {
   for (const btn of app.querySelectorAll<HTMLButtonElement>('[data-tool]')) {
     btn.classList.toggle('active', btn.dataset.tool === session.tool)
   }
-  swatches.querySelectorAll('button.swatch').forEach((el) => el.remove())
-  for (const preset of PRESET_COLORS) {
-    const btn = document.createElement('button')
-    btn.type = 'button'
-    btn.className = `swatch${colorsEqual(preset.color, session.color) ? ' active' : ''}`
-    btn.title = preset.name
-    btn.style.setProperty('--c', `rgb(${preset.color.r} ${preset.color.g} ${preset.color.b})`)
-    btn.addEventListener('click', () => setColor(preset.color, preset.name))
-    swatches.insertBefore(btn, customSwatch)
-  }
+  toolGroup.style.setProperty('--tool-color', hexColor(session.color))
+  toolGroup.style.setProperty('--tool-ink', contrastInk(session.color))
   picker.value = hexColor(session.color)
-  customSwatch.style.setProperty('--c', `rgb(${session.color.r} ${session.color.g} ${session.color.b})`)
-  const custom = !PRESET_COLORS.some((p) => colorsEqual(p.color, session.color))
-  customSwatch.classList.toggle('active', custom)
   fileLabel.textContent = session.fileName || 'No file'
   downloadBtn.disabled = !pdfBytes
   clearBtn.disabled = session.marks.length === 0
   zoomLabel.textContent = `${Math.round(session.zoom)}%`
 }
 
-function setColor(color: Color, presetName?: string): void {
+function setColor(color: Color): void {
   session.color = { ...color }
   const selected = selectedId ? session.marks.find((m) => m.id === selectedId) : undefined
   if (selected) selected.color = { ...color }
   persist()
   renderChrome()
   if (selected) paintAll()
-  buddy.color(presetName)
+  buddy.color()
 }
 
 function setTool(tool: Tool): void {
@@ -318,6 +307,12 @@ function addTextMark(event: PointerEvent): void {
   renderChrome()
 }
 
+function clearSelection(): void {
+  if (!selectedId) return
+  selectedId = null
+  paintAll()
+}
+
 function deleteSelected(): void {
   if (!selectedId) return
   const active = document.activeElement
@@ -403,7 +398,9 @@ pagesHost.addEventListener('mouseup', (e) => {
         return
       }
     }
+    const before = session.marks.length
     removeMarkAt(clientX, clientY)
+    if (session.marks.length === before) clearSelection()
   }, 0)
 })
 pagesHost.addEventListener('pointerdown', (e) => {
@@ -427,6 +424,11 @@ document.addEventListener('keydown', (e) => {
 })
 
 const viewerEl = app.querySelector<HTMLElement>('.viewer')!
+viewerEl.addEventListener('pointerdown', (e) => {
+  const t = e.target as HTMLElement
+  if (t.closest('.page, textarea, button, input, .buddy')) return
+  clearSelection()
+})
 viewerEl.addEventListener(
   'wheel',
   (event) => {
