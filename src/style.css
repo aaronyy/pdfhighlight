@@ -368,6 +368,11 @@ html, body, #app {
   padding: 2px 4px;
   outline: none;
   caret-color: var(--ink);
+  cursor: grab;
+}
+
+.mark-text textarea:focus {
+  cursor: text;
 }
 
 .mark-text.selected textarea {

@@ -313,7 +313,8 @@ export function renderMarks(
   selectedId: string | null,
   onSelect: (id: string) => void,
   onTextChange: (id: string, content: string) => void,
-  onTextMove: (id: string, x: number, y: number) => void,
+  onTextMove: (id: string, x: number, y: number, began?: boolean) => void,
+  onTextCommit: (id: string) => void,
 ): void {
   const layer = pageEl.querySelector<HTMLElement>('.annot-layer')
   if (!layer) return
@@ -323,7 +324,9 @@ export function renderMarks(
   for (const mark of marks) {
     if (mark.page !== page) continue
     if (mark.kind === 'text') {
-      layer.append(renderTextMark(mark, viewport, pageEl, selectedId, onSelect, onTextChange, onTextMove))
+      layer.append(
+        renderTextMark(mark, viewport, pageEl, selectedId, onSelect, onTextChange, onTextMove, onTextCommit),
+      )
     } else {
       layer.append(renderQuadMark(mark, viewport, selectedId, onSelect))
     }
@@ -370,7 +373,8 @@ function renderTextMark(
   selectedId: string | null,
   onSelect: (id: string) => void,
   onTextChange: (id: string, content: string) => void,
-  onTextMove: (id: string, x: number, y: number) => void,
+  onTextMove: (id: string, x: number, y: number, began?: boolean) => void,
+  onTextCommit: (id: string) => void,
 ): HTMLElement {
   const pos = pdfPointToCss(mark.x, mark.y, viewport)
   const el = document.createElement('div')
@@ -390,36 +394,64 @@ function renderTextMark(
     input.style.height = `${input.scrollHeight}px`
     onTextChange(mark.id, input.value)
   })
-  input.addEventListener('pointerdown', (e) => e.stopPropagation())
-  input.addEventListener('focus', () => onSelect(mark.id))
+  input.addEventListener('blur', () => onTextCommit(mark.id))
+
+  const beginDrag = (e: PointerEvent) => {
+    e.stopPropagation()
+    const originX = mark.x
+    const originY = mark.y
+    const start = clientPointToPdf(pageEl, viewport, e.clientX, e.clientY)
+    const pointerId = e.pointerId
+    let dragging = false
+    let started = false
+    const move = (ev: PointerEvent) => {
+      const dx = ev.clientX - e.clientX
+      const dy = ev.clientY - e.clientY
+      if (!dragging) {
+        if (Math.hypot(dx, dy) < 5) return
+        dragging = true
+        input.blur()
+        el.setPointerCapture(pointerId)
+      }
+      const now = clientPointToPdf(pageEl, viewport, ev.clientX, ev.clientY)
+      const x = originX + (now.x - start.x)
+      const y = originY + (now.y - start.y)
+      onTextMove(mark.id, x, y, !started)
+      started = true
+      const next = pdfPointToCss(x, y, viewport)
+      el.style.left = `${next.left}px`
+      el.style.top = `${next.top}px`
+    }
+    const up = () => {
+      if (dragging) {
+        try {
+          el.releasePointerCapture(pointerId)
+        } catch {
+          /* already released */
+        }
+      }
+      el.removeEventListener('pointermove', move)
+      el.removeEventListener('pointerup', up)
+      if (!dragging) {
+        onSelect(mark.id)
+        input.focus()
+      }
+    }
+    el.addEventListener('pointermove', move)
+    el.addEventListener('pointerup', up)
+  }
+
+  input.addEventListener('pointerdown', beginDrag)
+  el.addEventListener('pointerdown', (e) => {
+    if (e.target === input) return
+    e.preventDefault()
+    beginDrag(e)
+  })
 
   el.append(input)
   queueMicrotask(() => {
     input.style.height = 'auto'
     input.style.height = `${input.scrollHeight}px`
-  })
-
-  el.addEventListener('pointerdown', (e) => {
-    if (e.target === input) return
-    e.preventDefault()
-    e.stopPropagation()
-    onSelect(mark.id)
-    const start = clientPointToPdf(pageEl, viewport, e.clientX, e.clientY)
-    const originX = mark.x
-    const originY = mark.y
-    const pointerId = e.pointerId
-    el.setPointerCapture(pointerId)
-    const move = (ev: PointerEvent) => {
-      const now = clientPointToPdf(pageEl, viewport, ev.clientX, ev.clientY)
-      onTextMove(mark.id, originX + (now.x - start.x), originY + (now.y - start.y))
-    }
-    const up = () => {
-      el.releasePointerCapture(pointerId)
-      el.removeEventListener('pointermove', move)
-      el.removeEventListener('pointerup', up)
-    }
-    el.addEventListener('pointermove', move)
-    el.addEventListener('pointerup', up)
   })
   return el
 }

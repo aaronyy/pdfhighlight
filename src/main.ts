@@ -118,6 +118,16 @@ function paintAll(views = viewer.views()): void {
   for (const view of views) paintPage(view)
 }
 
+function dropEmptyText(exceptId?: string): boolean {
+  const next = session.marks.filter(
+    (m) => m.kind !== 'text' || m.content.trim().length > 0 || m.id === exceptId,
+  )
+  if (next.length === session.marks.length) return false
+  session.marks = next
+  if (selectedId && !next.some((m) => m.id === selectedId)) selectedId = null
+  return true
+}
+
 function paintPage(view: PageView): void {
   renderMarks(
     view.el,
@@ -126,6 +136,7 @@ function paintPage(view: PageView): void {
     selectedId,
     (id) => {
       if (selectedId === id) return
+      dropEmptyText(id)
       selectedId = id
       paintAll()
       buddy.selected()
@@ -140,14 +151,30 @@ function paintPage(view: PageView): void {
         persist()
       }
     },
-    (id, x, y) => {
+    (id, x, y, began) => {
       const mark = session.marks.find((m) => m.id === id)
-      if (mark?.kind === 'text') {
-        mark.x = x
-        mark.y = y
-        persist()
-        paintPage(view)
+      if (mark?.kind !== 'text') return
+      if (began) {
+        snapshotMarks()
+        selectedId = id
       }
+      mark.x = x
+      mark.y = y
+      persist()
+    },
+    (id) => {
+      const mark = session.marks.find((m) => m.id === id)
+      if (mark?.kind !== 'text') return
+      mark.content = mark.content.trim()
+      if (mark.content) {
+        persist()
+        return
+      }
+      session.marks = session.marks.filter((m) => m.id !== id)
+      if (selectedId === id) selectedId = null
+      persist()
+      paintAll()
+      renderChrome()
     },
   )
 }
@@ -301,6 +328,7 @@ function addTextMark(event: PointerEvent): void {
   if (target.closest('.mark')) return
   const pageEl = target.closest<HTMLElement>('.page')
   if (!pageEl) return
+  dropEmptyText()
   const page = Number(pageEl.dataset.page)
   const view = viewer.getView(page)
   if (!view) return
@@ -318,7 +346,6 @@ function addTextMark(event: PointerEvent): void {
   }
   session.marks.push(mark)
   selectedId = mark.id
-  persist()
   paintPage(view)
   queueMicrotask(() => {
     pageEl.querySelector<HTMLTextAreaElement>(`.mark-text[data-id="${mark.id}"] textarea`)?.focus()
@@ -328,9 +355,12 @@ function addTextMark(event: PointerEvent): void {
 }
 
 function clearSelection(): void {
-  if (!selectedId) return
+  const pruned = dropEmptyText()
+  if (!selectedId && !pruned) return
   selectedId = null
+  if (pruned) persist()
   paintAll()
+  renderChrome()
 }
 
 function deleteSelected(): void {
