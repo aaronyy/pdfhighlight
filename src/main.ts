@@ -45,8 +45,9 @@ app.innerHTML = `
         <button type="button" data-zoom="reset" data-zoom-label>100%</button>
         <button type="button" data-zoom="in" aria-label="Zoom in">+</button>
       </div>
+      <span class="save-status" data-saved aria-live="polite">Saved</span>
       <div class="actions">
-        <button type="button" class="ghost" data-action="clear" disabled>Clear</button>
+        <button type="button" class="ghost" data-action="undo" disabled>Undo</button>
         <label class="btn">Open<input class="hidden-file" type="file" accept="application/pdf" /></label>
         <button type="button" class="primary" data-action="download" disabled>Download</button>
       </div>
@@ -73,16 +74,19 @@ session.marks = collapseStackedMarks(session.marks)
 if (session.marks.length !== stacked) saveSession(session)
 let pdfBytes: ArrayBuffer | null = null
 let selectedId: string | null = null
+const undoStack: Mark[][] = []
 
 const thumbs = app.querySelector<HTMLElement>('.thumbs')!
 const pagesHost = app.querySelector<HTMLElement>('.pages')!
 const empty = app.querySelector<HTMLElement>('.empty')!
 const downloadBtn = app.querySelector<HTMLButtonElement>('[data-action="download"]')!
-const clearBtn = app.querySelector<HTMLButtonElement>('[data-action="clear"]')!
+const undoBtn = app.querySelector<HTMLButtonElement>('[data-action="undo"]')!
 const zoomLabel = app.querySelector<HTMLButtonElement>('[data-zoom-label]')!
 const fileLabel = app.querySelector<HTMLElement>('[data-file]')!
 const picker = app.querySelector<HTMLInputElement>('[data-rgb="picker"]')!
 const toolGroup = app.querySelector<HTMLElement>('.tool-group')!
+const savedEl = app.querySelector<HTMLElement>('[data-saved]')!
+let savedTimer = 0
 const buddy = new Buddy(app)
 
 const viewer = new PdfViewer(
@@ -97,6 +101,9 @@ const viewer = new PdfViewer(
 
 function persist(): void {
   saveSession(session)
+  savedEl.classList.add('on')
+  window.clearTimeout(savedTimer)
+  savedTimer = window.setTimeout(() => savedEl.classList.remove('on'), 1400)
 }
 
 function setTextToolClass(): void {
@@ -118,9 +125,13 @@ function paintPage(view: PageView): void {
     session.marks,
     selectedId,
     (id) => {
+      if (selectedId === id) return
       selectedId = id
       paintAll()
       buddy.selected()
+      pagesHost
+        .querySelector<HTMLTextAreaElement>(`.mark-text[data-id="${CSS.escape(id)}"] textarea`)
+        ?.focus()
     },
     (id, content) => {
       const mark = session.marks.find((m) => m.id === id)
@@ -155,7 +166,7 @@ function renderChrome(): void {
   picker.value = hexColor(session.color)
   fileLabel.textContent = session.fileName || 'No file'
   downloadBtn.disabled = !pdfBytes
-  clearBtn.disabled = session.marks.length === 0
+  undoBtn.disabled = undoStack.length === 0
   zoomLabel.textContent = `${Math.round(session.zoom)}%`
 }
 
@@ -184,6 +195,7 @@ async function openPdf(file: File): Promise<void> {
   session.docId = newId()
   session.marks = []
   selectedId = null
+  undoStack.length = 0
   persist()
   await savePdfBytes(session.docId, bytes.slice(0))
   await showPdf(bytes)
@@ -204,11 +216,17 @@ function sameInk(mark: Mark): boolean {
   return mark.kind !== 'text' && mark.kind === session.tool
 }
 
+function snapshotMarks(): void {
+  undoStack.push(session.marks.map((m) => structuredClone(m)))
+  if (undoStack.length > 80) undoStack.shift()
+}
+
 function applyInk(pageEl: HTMLElement, mapped: { quads: Quad[]; text: string }): void {
   const page = Number(pageEl.dataset.page)
   const view = viewer.getView(page)
   if (!view) return
 
+  snapshotMarks()
   const overlapping = session.marks.filter(
     (m) => sameInk(m) && m.page === page && markOverlapsQuads(m, mapped.quads),
   )
@@ -268,6 +286,7 @@ function removeMarkAt(clientX: number, clientY: number): void {
     (m) => sameInk(m) && m.page === page && m.kind !== 'text' && pointInQuads(pt.x, pt.y, m.quads),
   )
   if (!hit) return
+  snapshotMarks()
   session.marks = session.marks.filter((m) => m.id !== hit.id)
   selectedId = null
   persist()
@@ -286,6 +305,7 @@ function addTextMark(event: PointerEvent): void {
   const view = viewer.getView(page)
   if (!view) return
   const pt = clientPointToPdf(pageEl, view.viewport, event.clientX, event.clientY)
+  snapshotMarks()
   const mark: Mark = {
     id: newId(),
     kind: 'text',
@@ -319,6 +339,7 @@ function deleteSelected(): void {
   if (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement) {
     return
   }
+  snapshotMarks()
   session.marks = session.marks.filter((m) => m.id !== selectedId)
   selectedId = null
   persist()
@@ -327,9 +348,10 @@ function deleteSelected(): void {
   buddy.deleted()
 }
 
-function clearMarks(): void {
-  if (session.marks.length === 0) return
-  session.marks = []
+function undoMarks(): void {
+  const prev = undoStack.pop()
+  if (!prev) return
+  session.marks = prev
   selectedId = null
   persist()
   paintAll()
@@ -357,7 +379,7 @@ for (const btn of app.querySelectorAll<HTMLButtonElement>('[data-tool]')) {
   btn.addEventListener('click', () => setTool(btn.dataset.tool as Tool))
 }
 
-clearBtn.addEventListener('click', () => clearMarks())
+undoBtn.addEventListener('click', () => undoMarks())
 
 app.querySelector('[data-zoom="out"]')?.addEventListener('click', () => setZoom(session.zoom - 20))
 app.querySelector('[data-zoom="in"]')?.addEventListener('click', () => setZoom(session.zoom + 20))
@@ -408,6 +430,13 @@ pagesHost.addEventListener('pointerdown', (e) => {
 })
 
 document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+    const typing = document.activeElement
+    if (typing instanceof HTMLTextAreaElement || typing instanceof HTMLInputElement) return
+    e.preventDefault()
+    undoMarks()
+    return
+  }
   if (e.key === 'Delete' || e.key === 'Backspace') deleteSelected()
   if ((e.metaKey || e.ctrlKey) && (e.key === '=' || e.key === '+')) {
     e.preventDefault()

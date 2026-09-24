@@ -166,7 +166,7 @@ export class Buddy {
   }
 
   cleared(): void {
-    this.set('annoyed', 'blank page. kinda relaxing')
+    this.set('annoyed', 'undone. as you were')
   }
 
   zoomed(percent: number): void {

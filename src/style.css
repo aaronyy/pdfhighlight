@@ -109,7 +109,7 @@ html, body, #app {
 .toolbar label.primary:hover { background: #2a2a2a; }
 
 .toolbar button.ghost { color: var(--muted); }
-.toolbar button.ghost:hover { color: var(--danger); background: #fff1f1; }
+.toolbar button.ghost:hover { color: var(--ink); background: var(--soft); }
 
 .tool-group,
 .zoom-group,
@@ -156,7 +156,19 @@ html, body, #app {
   cursor: pointer;
 }
 
-.actions { margin-left: auto; }
+.save-status {
+  margin-left: auto;
+  font-size: 12px;
+  letter-spacing: -0.01em;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  pointer-events: none;
+}
+
+.save-status.on { opacity: 1; }
+
+.actions { margin-left: 0; }
 
 .workspace {
   display: grid;
@@ -343,14 +355,16 @@ html, body, #app {
 .mark-text textarea {
   display: block;
   min-width: 80px;
+  min-height: 1.2em;
   border: 0;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.82);
   color: inherit;
   font: inherit;
   resize: none;
   overflow: hidden;
   padding: 2px 4px;
   outline: none;
+  caret-color: var(--ink);
 }
 
 .mark-text.selected textarea {
