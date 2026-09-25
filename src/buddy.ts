@@ -60,7 +60,6 @@ export class Buddy {
   private front = 0
   private bubble: HTMLElement
   private mood: Mood | null = null
-  private tourAt = 0
   private idleTimer = 0
   private longIdleTimer = 0
 
@@ -169,9 +168,10 @@ export class Buddy {
   }
 
   private tour(): void {
-    const mood = TOUR[this.tourAt % TOUR.length]
-    this.tourAt += 1
-    this.set(mood, `${label(mood)} · ${this.tourAt}/${TOUR.length}`)
+    const from = this.mood ? TOUR.indexOf(this.mood) : -1
+    const index = (from + 1) % TOUR.length
+    const mood = TOUR[index]
+    this.set(mood, `${label(mood)} · ${index + 1}/${TOUR.length}`)
   }
 
   private armIdle(): void {
