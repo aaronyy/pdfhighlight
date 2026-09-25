@@ -1,65 +1,57 @@
 export type Mood =
-  | 'hi'
-  | 'smile'
-  | 'love'
-  | 'peace'
+  | 'good_morning'
+  | 'hug'
+  | 'kiss'
+  | 'chill'
+  | 'cuddle'
+  | 'omg'
+  | 'side_eye'
   | 'cool'
+  | 'work_mode'
   | 'sleepy'
-  | 'surprised'
-  | 'annoyed'
-  | 'yum'
-  | 'working'
-  | 'thinking'
-  | 'fighting'
-  | 'shy'
-  | 'noodles'
-  | 'angry'
-  | 'cozy'
+  | 'peace'
+  | 'coffee_time'
+  | 'my_baby'
+  | 'grumpy'
+  | 'love_you'
+  | 'blanket'
 
 const TOUR: Mood[] = [
-  'hi',
-  'smile',
-  'love',
-  'peace',
+  'good_morning',
+  'hug',
+  'kiss',
+  'chill',
+  'cuddle',
+  'omg',
+  'side_eye',
   'cool',
+  'work_mode',
   'sleepy',
-  'surprised',
-  'annoyed',
-  'yum',
-  'working',
-  'thinking',
-  'fighting',
-  'shy',
-  'noodles',
-  'angry',
-  'cozy',
+  'peace',
+  'coffee_time',
+  'my_baby',
+  'grumpy',
+  'love_you',
+  'blanket',
 ]
 
 const LINES: Record<Mood, string[]> = {
-  hi: ['hi! drop a paper on me', 'hey! open a PDF and let’s mark it up'],
-  smile: ['nice highlight', 'that line is going in the notes'],
-  love: ['margin note. cute', 'writing in the margins. i love that'],
-  peace: ['underline. chill pick', 'underlined. we come in peace'],
+  good_morning: ['good morning. drop a paper on me', 'hey. open a PDF and let’s mark it up'],
+  hug: ['welcome back. your marks are here', 'got you. keep going'],
+  kiss: ['nice highlight', 'that line is going in the notes'],
+  chill: ['underline. chill pick', 'chill. we can mark this slowly'],
+  cuddle: ['margin note. stay close', 'writing in the margins. cute'],
+  omg: ['omg. a PDF', 'wait. that actually loaded'],
+  side_eye: ['hm. looking at this bit', 'side eye. that mark is suspicious'],
   cool: ['strike. ice cold', 'yeah that sentence is cancelled'],
-  sleepy: ['still there?', 'i can nap on this methods section'],
-  surprised: ['ooh a PDF', 'wait. that actually loaded'],
-  annoyed: ['ok deleted', 'fine. that mark is gone'],
-  yum: ['pink is a snack', 'this color tastes like boba'],
-  working: ['opening the paper…', 'rendering pages. one sec'],
-  thinking: ['hm. new tool', 'custom RGB. science'],
-  fighting: ['downloaded. we did it', 'annotated PDF. fighting!'],
-  shy: ['don’t look at my note', 'i just moved that a little'],
-  noodles: ['five marks. lunch break?', 'this paper is a whole bowl'],
-  angry: ['nothing to download yet', 'open a PDF first!!'],
-  cozy: ['i live here now', 'hoodie mode. keep highlighting'],
-}
-
-const PRESET_MOOD: Record<string, Mood> = {
-  Yellow: 'smile',
-  Green: 'noodles',
-  Blue: 'cool',
-  Pink: 'yum',
-  Purple: 'love',
+  work_mode: ['work mode. opening the paper', 'rendering pages. one sec'],
+  sleepy: ['still there?', 'zzz. i can nap on this methods section'],
+  peace: ['underlined. peace', 'peace. that line stays'],
+  coffee_time: ['five marks. coffee break?', 'this paper is a whole cup'],
+  my_baby: ['don’t look. i just moved that', 'scooted it. my baby'],
+  grumpy: ['ok deleted', 'fine. that mark is gone'],
+  love_you: ['downloaded. love you', 'annotated PDF. we did it'],
+  blanket: ['blanket mode. keep highlighting', 'i live here now'],
 }
 
 export class Buddy {
@@ -76,8 +68,8 @@ export class Buddy {
     this.root = document.createElement('aside')
     this.root.className = 'buddy'
     this.root.innerHTML = `
-      <div class="buddy-bubble" data-bubble>hi! drop a paper on me</div>
-      <button type="button" class="buddy-sticker" title="An. Click to cycle faces.">
+      <div class="buddy-bubble" data-bubble>good morning. drop a paper on me</div>
+      <button type="button" class="buddy-sticker" title="An. Click to cycle stickers.">
         <span class="buddy-faces">
           <img alt="" width="88" height="88" />
           <img alt="" width="88" height="88" />
@@ -94,7 +86,7 @@ export class Buddy {
       const preload = new Image()
       preload.src = srcFor(mood)
     }
-    this.set('hi')
+    this.set('good_morning')
     this.armIdle()
     document.addEventListener('pointerdown', () => this.armIdle(), { passive: true })
   }
@@ -107,7 +99,7 @@ export class Buddy {
     this.mood = mood
     const incoming = this.faces[1 - this.front]
     const outgoing = this.faces[this.front]
-    incoming.alt = mood
+    incoming.alt = label(mood)
     incoming.src = srcFor(mood)
     const reveal = () => {
       incoming.classList.add('show')
@@ -119,79 +111,74 @@ export class Buddy {
   }
 
   greet(hasDoc: boolean): void {
-    this.set(hasDoc ? 'cozy' : 'hi', hasDoc ? 'welcome back. your marks are here' : undefined)
+    this.set(hasDoc ? 'hug' : 'good_morning', hasDoc ? 'welcome back. your marks are here' : undefined)
   }
 
   opening(): void {
-    this.set('working')
+    this.set('work_mode')
   }
 
   opened(): void {
-    this.set('surprised', 'paper’s in. highlight away')
+    this.set('omg', 'omg. paper’s in. highlight away')
   }
 
   tool(tool: string): void {
-    if (tool === 'highlight') this.set('thinking', 'highlighter ready')
-    else if (tool === 'underline') this.set('peace')
+    if (tool === 'highlight') this.set('side_eye', 'highlighter ready')
+    else if (tool === 'underline') this.set('chill')
     else if (tool === 'strikethrough') this.set('cool')
-    else this.set('shy', 'click the page to leave a note')
-  }
-
-  color(name?: string): void {
-    if (name && PRESET_MOOD[name]) this.set(PRESET_MOOD[name], colorLine(name))
-    else this.set('thinking', 'new color. let’s go')
+    else this.set('my_baby', 'click the page. this note’s my baby')
   }
 
   marked(kind: string, total: number): void {
     if (total >= 5 && kind === 'highlight') {
-      this.set('noodles')
+      this.set('coffee_time')
       return
     }
-    if (kind === 'highlight') this.set('smile')
+    if (kind === 'highlight') this.set('kiss')
     else if (kind === 'underline') this.set('peace')
     else if (kind === 'strikethrough') this.set('cool')
-    else this.set('love')
+    else this.set('cuddle')
   }
 
   selected(): void {
-    this.set('shy', 'tap delete if that one’s out')
+    this.set('side_eye', 'tap delete if that one’s out')
   }
 
   moved(): void {
-    this.set('shy')
+    this.set('my_baby')
   }
 
   deleted(): void {
-    this.set('annoyed')
+    this.set('grumpy')
   }
 
   cleared(): void {
-    this.set('annoyed', 'undone. as you were')
+    this.set('grumpy', 'undone. as you were')
   }
 
   zoomed(percent: number): void {
-    this.set('thinking', `${percent}% · pinch of zoom`)
+    this.set('side_eye', `${percent}% · pinch of zoom`)
   }
 
   downloading(): void {
-    this.set('fighting')
+    this.set('love_you')
   }
 
   nothingToDownload(): void {
-    this.set('angry')
+    this.set('grumpy', pick(['nothing to download yet', 'open a PDF first!!']))
   }
 
   private tour(): void {
     const mood = TOUR[this.tourAt % TOUR.length]
     this.tourAt += 1
-    this.set(mood, `${mood} · ${this.tourAt}/${TOUR.length}`)
+    this.set(mood, `${label(mood)} · ${this.tourAt}/${TOUR.length}`)
   }
 
   private armIdle(): void {
     window.clearTimeout(this.idleTimer)
     window.clearTimeout(this.longIdleTimer)
     this.idleTimer = window.setTimeout(() => this.set('sleepy'), 22000)
-    this.longIdleTimer = window.setTimeout(() => this.set('cozy'), 50000)
+    this.longIdleTimer = window.setTimeout(() => this.set('blanket'), 50000)
   }
 }
 
@@ -199,14 +186,10 @@ function srcFor(mood: Mood): string {
   return `${import.meta.env.BASE_URL}buddy/${mood}.png`
 }
 
-function pick(lines: string[]): string {
-  return lines[Math.floor(Math.random() * lines.length)]
+function label(mood: Mood): string {
+  return mood.replaceAll('_', ' ')
 }
 
-function colorLine(name: string): string {
-  if (name === 'Pink') return 'pink. yum'
-  if (name === 'Purple') return 'purple. i’m blushing'
-  if (name === 'Blue') return 'blue is cool actually'
-  if (name === 'Green') return 'green. kinda noodle-y'
-  return 'classic yellow. chef’s kiss'
+function pick(lines: string[]): string {
+  return lines[Math.floor(Math.random() * lines.length)]
 }

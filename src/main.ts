@@ -204,7 +204,6 @@ function setColor(color: Color): void {
   persist()
   renderChrome()
   if (selected) paintAll()
-  buddy.color()
 }
 
 function setTool(tool: Tool): void {
