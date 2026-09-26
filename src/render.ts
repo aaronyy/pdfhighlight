@@ -8,6 +8,7 @@ import {
   type RenderTask,
 } from 'pdfjs-dist'
 import workerSrc from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import { bindTextGeometry } from './annotate'
 
 GlobalWorkerOptions.workerSrc = workerSrc
 
@@ -30,14 +31,17 @@ export class PdfViewer {
   private pdf: PDFDocumentProxy | null = null
   private pages = new Map<number, PageView>()
   private tasks = new Map<number, RenderTask>()
+  private textLayers = new Map<number, TextLayer>()
   private observer: IntersectionObserver | null = null
   private host: HTMLElement
   private thumbs: HTMLElement
   private onPagesReady: (views: PageView[]) => void
   private onVisiblePage: (page: number) => void
   private fitScale = 1
+  private paintGeneration = 0
   zoom = 1
   scale = 1.2
+  visiblePage = 1
 
   constructor(
     host: HTMLElement,
@@ -52,6 +56,7 @@ export class PdfViewer {
   }
 
   async load(data: ArrayBuffer): Promise<number> {
+    this.paintGeneration++
     this.destroy()
     const assetBase = import.meta.env.BASE_URL
     this.pdf = await getDocument({
@@ -66,6 +71,7 @@ export class PdfViewer {
     this.host.replaceChildren()
     this.thumbs.replaceChildren()
     this.pages.clear()
+    this.visiblePage = 1
 
     const count = this.pdf.numPages
     const first = await this.pdf.getPage(1)
@@ -88,7 +94,10 @@ export class PdfViewer {
           .filter((e) => e.isIntersecting)
           .map((e) => Number((e.target as HTMLElement).dataset.page))
           .sort((a, b) => a - b)
-        if (visible[0]) this.onVisiblePage(visible[0])
+        if (visible[0]) {
+          this.visiblePage = visible[0]
+          this.onVisiblePage(visible[0])
+        }
         for (const entry of entries) {
           const n = Number((entry.target as HTMLElement).dataset.page)
           if (entry.isIntersecting) void this.renderPage(n)
@@ -129,6 +138,7 @@ export class PdfViewer {
 
   applyZoom(zoom: number): void {
     if (!this.pdf) return
+    this.paintGeneration++
     this.zoom = Math.min(3, Math.max(0.4, zoom))
     const first = this.pages.get(1)
     if (first) {
@@ -140,6 +150,7 @@ export class PdfViewer {
     const keep = scroller ? scroller.scrollTop / Math.max(1, scroller.scrollHeight) : 0
     for (const task of this.tasks.values()) task.cancel()
     this.tasks.clear()
+    this.cancelTextLayers()
     for (const view of this.pages.values()) {
       view.viewport = view.page.getViewport({ scale: this.scale })
       applyPageMetrics(view.el, view.viewport)
@@ -198,6 +209,7 @@ export class PdfViewer {
   private async renderPage(n: number): Promise<void> {
     const view = this.pages.get(n)
     if (!view || view.el.dataset.rendered === '1') return
+    const generation = this.paintGeneration
     view.el.dataset.rendered = '1'
 
     const canvas = view.el.querySelector('canvas')
@@ -227,15 +239,26 @@ export class PdfViewer {
       this.tasks.set(n, task)
       await task.promise
       this.tasks.delete(n)
+      if (generation !== this.paintGeneration) return
 
       const content = await view.page.getTextContent()
-      textLayerEl.replaceChildren()
+      if (generation !== this.paintGeneration) return
+      // Draw into a detached node. A cancelled paint can still append after
+      // zoom has cleared the live layer; swapping only on success keeps the
+      // page on one text layer.
+      const holder = document.createElement('div')
       const layer = new TextLayer({
         textContentSource: content,
-        container: textLayerEl,
+        container: holder,
         viewport: view.viewport,
       })
+      this.textLayers.get(n)?.cancel()
+      this.textLayers.set(n, layer)
       await layer.render()
+      if (this.textLayers.get(n) !== layer || generation !== this.paintGeneration) return
+      textLayerEl.replaceChildren(...holder.childNodes)
+      bindTextGeometry(view.el, content)
+      view.el.dispatchEvent(new CustomEvent('page-painted', { bubbles: true }))
 
       const thumb = this.thumbs.querySelector<HTMLElement>(`.thumb[data-page="${n}"] .thumb-frame`)
       if (thumb) {
@@ -246,9 +269,14 @@ export class PdfViewer {
       }
     } catch (err) {
       this.tasks.delete(n)
-      delete view.el.dataset.rendered
-      console.warn(`pdf page ${n} render failed`, err)
+      if (generation === this.paintGeneration) delete view.el.dataset.rendered
+      if (generation === this.paintGeneration) console.warn(`pdf page ${n} render failed`, err)
     }
+  }
+
+  private cancelTextLayers(): void {
+    for (const layer of this.textLayers.values()) layer.cancel()
+    this.textLayers.clear()
   }
 
   destroy(): void {
@@ -256,6 +284,7 @@ export class PdfViewer {
     this.observer = null
     for (const task of this.tasks.values()) task.cancel()
     this.tasks.clear()
+    this.cancelTextLayers()
     void this.pdf?.cleanup()
     this.pdf = null
     this.pages.clear()

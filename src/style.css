@@ -29,6 +29,8 @@ html, body, #app {
 }
 
 .toolbar {
+  position: relative;
+  z-index: 30;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -114,6 +116,14 @@ html, body, #app {
 .toolbar button.ghost { color: var(--muted); }
 .toolbar button.ghost:hover { color: var(--ink); background: var(--soft); }
 
+.format-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  --mark: #fff475;
+}
+
 .tool-group,
 .zoom-group,
 .actions {
@@ -137,6 +147,104 @@ html, body, #app {
   color: #555;
 }
 
+.tool-group button {
+  position: relative;
+}
+
+.tool-group button[data-tool] {
+  flex-direction: column;
+  width: 34px;
+  height: 36px;
+  padding: 4px 0 3px;
+  gap: 2px;
+}
+
+.marker-size button {
+  width: 26px;
+  height: 28px;
+  padding: 0;
+  flex-direction: row;
+}
+
+.fmt-svg {
+  width: 15px;
+  height: 15px;
+  display: block;
+}
+
+.fmt-bar {
+  display: block;
+  width: 14px;
+  height: 3px;
+  border-radius: 1px;
+  background: var(--mark, #fff475);
+}
+
+.fmt-u,
+.fmt-s,
+.fmt-t {
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1;
+  color: var(--ink);
+}
+
+.format-bar .fmt-u,
+.sel-menu .fmt-u {
+  border-bottom: 2px solid var(--mark, #fff475);
+  padding: 0 1px 1px;
+}
+
+.format-bar .fmt-s,
+.sel-menu .fmt-s {
+  padding: 0 1px;
+  background-image: linear-gradient(var(--mark, #111), var(--mark, #111));
+  background-size: 100% 2px;
+  background-repeat: no-repeat;
+  background-position: center 58%;
+}
+
+.text-tools .fmt-u {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  color: inherit;
+}
+
+.text-tools .fmt-s {
+  text-decoration: line-through;
+  text-underline-offset: 0;
+  color: inherit;
+}
+
+.tool-group button::after {
+  content: attr(data-hotkey);
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  z-index: 8;
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 560;
+  letter-spacing: 0.02em;
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
+  opacity: 0;
+  transform: translateX(-50%) translateY(-2px);
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.tool-group button:hover::after,
+.tool-group button:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
 .zoom-group button:hover {
   background: var(--panel);
   color: var(--ink);
@@ -145,19 +253,118 @@ html, body, #app {
 
 .tool-group button.active,
 .tool-group button.active:hover {
-  background: var(--tool-color, var(--panel));
-  color: var(--tool-ink, var(--ink));
+  background: #fff;
+  color: var(--ink);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
 
-.color-picker {
-  width: 28px;
-  height: 22px;
+.format-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  --mark: #fff475;
+}
+
+.ink-dots {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ink-dot {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
   padding: 0;
+  border: 0;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.16);
+  cursor: pointer;
+}
+
+.toolbar .ink-dot {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  padding: 0;
+  border-radius: 5px;
+}
+
+.ink-dot.on {
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.16),
+    0 0 0 2px #fff,
+    0 0 0 3.5px var(--ink);
+}
+
+.ink-custom {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  border-radius: 5px;
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.16);
+  background: conic-gradient(#f28b82, #fff475, #ccff90, #aecbfa, #d7aefb, #fdcfe8, #f28b82);
+}
+
+.ink-custom.on {
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.16),
+    0 0 0 2px #fff,
+    0 0 0 3.5px var(--ink);
+}
+
+.ink-custom input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  border: 0;
+  padding: 0;
+}
+
+.sel-menu {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px 6px;
+  background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.14), 0 0 0 1px rgba(0, 0, 0, 0.03);
+  --mark: #fff475;
+}
+
+.sel-menu[hidden] { display: none; }
+
+.sel-menu button {
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
   background: transparent;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.sel-menu button:hover { background: var(--soft); }
+
+.sel-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 4px;
+  background: var(--line);
 }
 
 .save-status {
@@ -333,8 +540,33 @@ html, body, #app {
 }
 
 .page.selecting { cursor: text; }
-.page.selecting .mark-quad { pointer-events: none; }
-.page.text-tool .textLayer { pointer-events: none; }
+.page.selecting .mark-quad,
+.page.selecting .mark-marker { pointer-events: none; }
+.page.text-tool .textLayer,
+.page.marker-tool .textLayer { pointer-events: none; }
+.page.marker-tool { cursor: crosshair; }
+.page.marker-tool .mark-marker { pointer-events: none; }
+
+.marker-size {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-left: 2px;
+  padding-left: 6px;
+  border-left: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.marker-size[hidden] { display: none; }
+
+.marker-size-label {
+  min-width: 22px;
+  padding: 0 4px;
+  color: #555;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  pointer-events: none;
+}
 
 .mark { position: absolute; inset: 0; pointer-events: none; }
 .mark-quad {
@@ -344,8 +576,30 @@ html, body, #app {
   cursor: pointer;
 }
 
-.mark-highlight .mark-quad { border-radius: 1px; }
+.mark-highlight .mark-quad { border-radius: 3px; }
 .mark.selected .mark-quad { outline: 1px solid var(--accent); }
+
+.mark-marker .mark-stroke {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.mark-marker .mark-path {
+  mix-blend-mode: multiply;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.mark-marker.selected .mark-path {
+  filter: drop-shadow(0 0 0.6px var(--accent)) drop-shadow(0 0 0.6px var(--accent));
+}
+
+.page.selecting .mark-marker .mark-path,
+.page.marker-tool .mark-marker .mark-path {
+  pointer-events: none;
+}
 
 .mark-text {
   position: absolute;
@@ -353,32 +607,360 @@ html, body, #app {
   pointer-events: auto;
   cursor: grab;
   min-width: 24px;
-  z-index: 3;
+  z-index: 5;
+  padding: 6px;
+  margin: -6px;
 }
 
-.mark-text textarea {
+.mark-text.selected {
+  cursor: grab;
+  z-index: 100;
+}
+
+.mark-text .text-body {
   display: block;
-  min-width: 80px;
-  min-height: 1.2em;
+  min-width: 48px;
+  min-height: 1.6em;
   border: 0;
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 255, 255, 0.92);
   color: inherit;
   font: inherit;
-  resize: none;
-  overflow: hidden;
-  padding: 2px 4px;
+  line-height: 1.35;
+  padding: 4px 8px 6px;
   outline: none;
   caret-color: var(--ink);
-  cursor: grab;
+  cursor: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
-.mark-text textarea:focus {
+.mark-text .text-body[data-empty='1']::before {
+  content: 'Type…';
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.mark-text .text-body:focus {
   cursor: text;
 }
 
-.mark-text.selected textarea {
+.mark-text.dragging {
+  cursor: grabbing;
+}
+.mark-text.dragging .text-body {
+  cursor: grabbing;
+}
+
+.mark-text .text-body ul,
+.mark-text .text-body ol {
+  margin: 0.12em 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mark-text .text-body li {
+  margin: 0;
+  padding: 0;
+  background: none !important;
+}
+
+.mark-text .text-body .li-bullet {
+  display: inline-block;
+  min-width: 1.15em;
+  user-select: text;
+  cursor: text;
+}
+
+.mark-text .text-body span {
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  border-radius: 2px;
+}
+
+.mark-text .text-body ::selection {
+  background: rgba(94, 106, 210, 0.28);
+}
+
+.mark-text.selected .text-body {
   box-shadow: 0 0 0 1px var(--accent);
-  background: rgba(255, 255, 255, 0.8);
+}
+
+.text-tools {
+  display: none;
+  position: absolute;
+  left: 4px;
+  bottom: calc(100% + 2px);
+  z-index: 100;
+  gap: 1px;
+  padding: 3px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.02);
+  cursor: default;
+}
+
+.mark-text.selected .text-tools {
+  display: flex;
+}
+
+.text-tools button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  height: 26px;
+  min-width: 26px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  cursor: pointer;
+}
+
+.text-tools button:hover { background: var(--soft); }
+
+.text-tools button.on {
+  background: var(--soft);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.text-tools button[data-cmd="italic"] { font-style: italic; font-weight: 560; font-family: Georgia, 'Iowan Old Style', serif; }
+
+.text-tools button[data-cmd="underline"],
+.text-tools button[data-cmd="strikeThrough"] { padding: 0 4px; }
+
+.text-tools-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 3px;
+  background: var(--line);
+}
+
+.swatch-a {
+  position: relative;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1;
+  font-family: Georgia, 'Iowan Old Style', serif;
+  padding-bottom: 2px;
+}
+
+.swatch-a i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 1px;
+  font-style: normal;
+}
+
+.swatch-bg {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.16);
+}
+
+.swatch-bg.none,
+.color-pop button.none {
+  background-color: #fff;
+  background-image: linear-gradient(
+    to top right,
+    transparent calc(50% - 0.75px),
+    #e5484d calc(50% - 0.75px),
+    #e5484d calc(50% + 0.75px),
+    transparent calc(50% + 0.75px)
+  );
+}
+
+.color-pop {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  z-index: 6;
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.color-pop[hidden] { display: none; }
+
+.color-pop button {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  padding: 0;
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.14);
+}
+
+.pop-swatch.custom {
+  background: var(--soft);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.color-custom {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.text-resize {
+  display: none;
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--accent);
+  cursor: nwse-resize;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+.mark-text.selected .text-resize,
+.mark-text.selected .image-delete { display: block; }
+
+.mark-text .image-delete {
+  top: -4px;
+  right: -4px;
+}
+
+.insert-wrap { position: relative; }
+
+.insert-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.insert-pop[hidden] { display: none; }
+
+.insert-pop button {
+  width: 100%;
+  height: 32px;
+  justify-content: flex-start;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+.mark-image {
+  position: absolute;
+  inset: auto;
+  z-index: 4;
+  pointer-events: auto;
+  cursor: grab;
+  user-select: none;
+}
+
+.mark-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+}
+
+.mark-image.selected {
+  z-index: 90;
+  outline: 1px solid var(--accent);
+  box-shadow: 0 0 0 1px #fff;
+}
+
+.mark-image.dragging { cursor: grabbing; }
+
+.image-resize,
+.image-rotate,
+.image-delete {
+  display: none;
+  position: absolute;
+  z-index: 2;
+}
+
+.mark-image.selected .image-resize,
+.mark-image.selected .image-rotate,
+.mark-image.selected .image-delete { display: block; }
+
+.image-resize {
+  right: -5px;
+  bottom: -5px;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--accent);
+  cursor: nwse-resize;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+.image-rotate {
+  left: 50%;
+  top: -22px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translateX(-50%);
+  cursor: grab;
+  box-shadow: 0 0 0 2px #fff;
+}
+
+.image-rotate::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  width: 1px;
+  height: 10px;
+  background: var(--accent);
+  transform: translateX(-50%);
+}
+
+.image-delete {
+  top: -10px;
+  right: -10px;
+  appearance: none;
+  border: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  background: #fff;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  line-height: 16px;
+  box-shadow: 0 0 0 1px var(--line);
+  cursor: pointer;
+}
+
+.image-delete:hover {
+  color: var(--danger);
+  background: #fdecec;
 }
 
 .hidden-file { display: none; }

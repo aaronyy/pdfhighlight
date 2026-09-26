@@ -123,6 +123,7 @@ export class Buddy {
 
   tool(tool: string): void {
     if (tool === 'highlight') this.set('side_eye', 'highlighter ready')
+    else if (tool === 'marker') this.set('side_eye', 'sharpie ready')
     else if (tool === 'underline') this.set('chill')
     else if (tool === 'strikethrough') this.set('cool')
     else this.set('my_baby', 'click the page. this note’s my baby')
@@ -134,8 +135,11 @@ export class Buddy {
       return
     }
     if (kind === 'highlight') this.set('kiss')
+    else if (kind === 'marker') this.set('kiss', 'nice mark')
     else if (kind === 'underline') this.set('peace')
     else if (kind === 'strikethrough') this.set('cool')
+    else if (kind === 'image') this.set('cuddle', 'photo’s on the page')
+    else if (kind === 'page') this.set('omg', 'page’s in')
     else this.set('cuddle')
   }
 

@@ -4,6 +4,7 @@ import { DEFAULT_COLOR } from './types'
 const LS_KEY = 'pdfhighlight:doc'
 const DB_NAME = 'pdfhighlight'
 const STORE_NAME = 'files'
+const IMAGE_STORE = 'images'
 
 export function newId(): string {
   return crypto.randomUUID()
@@ -33,6 +34,9 @@ export function loadSession(): Session {
       marks: Array.isArray(parsed.marks) ? parsed.marks : [],
       docId: parsed.docId ?? '',
       zoom: typeof parsed.zoom === 'number' ? parsed.zoom : 100,
+      textWidth: typeof parsed.textWidth === 'number' && parsed.textWidth > 0 ? parsed.textWidth : undefined,
+      textFontSize: typeof parsed.textFontSize === 'number' && parsed.textFontSize > 0 ? parsed.textFontSize : undefined,
+      markerWidth: typeof parsed.markerWidth === 'number' && parsed.markerWidth > 0 ? parsed.markerWidth : undefined,
     }
   } catch {
     return emptySession()
@@ -45,11 +49,14 @@ export function saveSession(session: Session): void {
 
 function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1)
+    const req = indexedDB.open(DB_NAME, 2)
     req.onupgradeneeded = () => {
       const db = req.result
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME)
+      }
+      if (!db.objectStoreNames.contains(IMAGE_STORE)) {
+        db.createObjectStore(IMAGE_STORE)
       }
     }
     req.onsuccess = () => resolve(req.result)
@@ -87,6 +94,56 @@ export async function loadPdfBytes(docId: string): Promise<ArrayBuffer | null> {
   } catch (err) {
     console.warn('IndexedDB load failed', err)
     return null
+  }
+}
+
+export async function saveImageBlob(imageId: string, blob: Blob): Promise<void> {
+  try {
+    const db = await openDb()
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IMAGE_STORE, 'readwrite')
+      tx.objectStore(IMAGE_STORE).put(blob, imageId)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+    db.close()
+  } catch (err) {
+    console.warn('IndexedDB image save failed', err)
+  }
+}
+
+export async function loadImageBlob(imageId: string): Promise<Blob | null> {
+  if (!imageId) return null
+  try {
+    const db = await openDb()
+    const blob = await new Promise<Blob | null>((resolve, reject) => {
+      const tx = db.transaction(IMAGE_STORE, 'readonly')
+      const req = tx.objectStore(IMAGE_STORE).get(imageId)
+      req.onsuccess = () => resolve((req.result as Blob) ?? null)
+      req.onerror = () => reject(req.error)
+    })
+    db.close()
+    return blob
+  } catch (err) {
+    console.warn('IndexedDB image load failed', err)
+    return null
+  }
+}
+
+export async function deleteImageBlobs(ids: string[]): Promise<void> {
+  if (ids.length === 0) return
+  try {
+    const db = await openDb()
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(IMAGE_STORE, 'readwrite')
+      const store = tx.objectStore(IMAGE_STORE)
+      for (const id of ids) store.delete(id)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+    db.close()
+  } catch (err) {
+    console.warn('IndexedDB image delete failed', err)
   }
 }
 
