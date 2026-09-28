@@ -1874,7 +1874,7 @@ function renderTextMark(
       const now = clientPointToPdf(pageEl, viewport, ev.clientX, ev.clientY)
       const nextWidth = Math.max(48, originWidth + (now.x - start.x))
       const scale = nextWidth / originWidth
-      const nextSize = Math.min(72, Math.max(8, originSize * scale))
+      const nextSize = Math.min(72, Math.max(4, originSize * scale))
       onTextResize(mark.id, nextWidth, nextSize, !started)
       started = true
       body.style.width = `${nextWidth * viewport.scale}px`
