@@ -5,20 +5,18 @@ import {
   collapseStackedMarks,
   colorFromHex,
   hexColor,
-  markOverlapsQuads,
   pageFromNode,
   pointHitsMarker,
   pointInQuads,
   rangeToQuads,
   renderMarks,
-  roughlySameRegion,
   selectionToQuads,
   stabilizeHighlights,
   wordRangeAt,
 } from './annotate'
 import { downloadAnnotatedPdf } from './export'
 import { insertBlankPage, insertPagesFromFile, isImageFile } from './insert'
-import { PdfViewer, type PageView } from './render'
+import { PdfViewer, type OutlineEntry, type PageView } from './render'
 import { Buddy } from './buddy'
 import {
   deleteImageBlobs,
@@ -111,7 +109,17 @@ app.innerHTML = `
       </div>
     </header>
     <div class="workspace">
-      <aside class="thumbs"></aside>
+      <aside class="thumbs">
+        <div class="thumbs-header">
+          <button type="button" class="thumbs-menu-btn" data-thumbs-menu-toggle aria-label="Thumbnail options" aria-haspopup="menu" aria-expanded="false" title="Options">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>
+          </button>
+        </div>
+        <div class="thumbs-list" data-thumbs-list></div>
+        <p class="thumbs-empty" hidden>Star pages to filter</p>
+        <div class="outline-list" data-outline-list hidden></div>
+        <p class="outline-empty" hidden>No table of contents</p>
+      </aside>
       <main class="viewer">
         <div class="empty">
           <div class="empty-card">
@@ -123,11 +131,36 @@ app.innerHTML = `
         <div class="pages" hidden></div>
       </main>
     </div>
+    <div class="thumbs-pop" data-thumbs-pop hidden role="menu">
+      <button type="button" role="menuitemradio" data-sidebar-mode="thumbs" aria-checked="true">
+        <span class="thumbs-check" aria-hidden="true"></span>
+        Thumbnails
+      </button>
+      <button type="button" role="menuitemradio" data-sidebar-mode="outline" aria-checked="false">
+        <span class="thumbs-check" aria-hidden="true"></span>
+        Table of Contents
+      </button>
+      <div class="thumbs-pop-sep" role="separator"></div>
+      <button type="button" role="menuitemcheckbox" data-single-page aria-checked="false">
+        <span class="thumbs-check" aria-hidden="true"></span>
+        Single page
+      </button>
+      <button type="button" role="menuitemcheckbox" data-thumbs-filter aria-checked="false">
+        <span class="thumbs-check" aria-hidden="true"></span>
+        Show bookmarked only
+      </button>
+      <div class="thumbs-pop-sep" role="separator"></div>
+      <button type="button" role="menuitem" data-sidebar-visibility>Hide sidebar</button>
+    </div>
     <div class="sel-menu" data-sel-menu hidden>
       <div class="ink-dots" data-sel-dots role="listbox" aria-label="Highlight"></div>
       <span class="sel-sep"></span>
       <button type="button" data-apply="underline" title="Underline"><span class="fmt-u">U</span></button>
       <button type="button" data-apply="strikethrough" title="Strikethrough"><span class="fmt-s">S</span></button>
+      <span class="sel-sep" data-delete-sep hidden></span>
+      <button type="button" data-delete-mark hidden title="Remove" aria-label="Remove">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v8h-2V9zm4 0h2v8h-2V9zM7 9h2v8H7V9zm-1 11h12l1-12H5l1 12z"/></svg>
+      </button>
     </div>
   </div>
 `
@@ -145,7 +178,16 @@ let markerPointer: number | null = null
 let markerMoved = false
 let markerStart = { x: 0, y: 0 }
 
-const thumbs = app.querySelector<HTMLElement>('.thumbs')!
+const workspace = app.querySelector<HTMLElement>('.workspace')!
+const thumbs = app.querySelector<HTMLElement>('[data-thumbs-list]')!
+const outlineList = app.querySelector<HTMLElement>('[data-outline-list]')!
+const outlineEmpty = app.querySelector<HTMLElement>('.outline-empty')!
+const thumbsEmpty = app.querySelector<HTMLElement>('.thumbs-empty')!
+const thumbsMenuToggle = app.querySelector<HTMLButtonElement>('[data-thumbs-menu-toggle]')!
+const thumbsPop = app.querySelector<HTMLElement>('[data-thumbs-pop]')!
+const thumbsFilterBtn = app.querySelector<HTMLButtonElement>('[data-thumbs-filter]')!
+const sidebarVisibilityBtn = app.querySelector<HTMLButtonElement>('[data-sidebar-visibility]')!
+const singlePageBtn = app.querySelector<HTMLButtonElement>('[data-single-page]')!
 const pagesHost = app.querySelector<HTMLElement>('.pages')!
 const empty = app.querySelector<HTMLElement>('.empty')!
 const downloadBtn = app.querySelector<HTMLButtonElement>('[data-action="download"]')!
@@ -179,9 +221,125 @@ const viewer = new PdfViewer(
   (views) => {
     paintAll(views)
     setPageToolClass()
+    syncThumbBookmarks()
   },
-  (page) => viewer.setActiveThumb(page),
+  (page) => {
+    viewer.setActiveThumb(page)
+    syncOutlineActive(page)
+  },
+  (page) => toggleBookmark(page),
 )
+
+function bookmarkedSet(): Set<number> {
+  return new Set(session.bookmarkedPages ?? [])
+}
+
+function syncThumbBookmarks(): void {
+  const showOnly = session.showBookmarkedOnly === true
+  viewer.syncThumbBookmarks(bookmarkedSet(), showOnly)
+  thumbsFilterBtn.setAttribute('aria-checked', showOnly ? 'true' : 'false')
+  thumbsFilterBtn.classList.toggle('on', showOnly)
+}
+
+function syncSinglePage(): void {
+  const on = session.singlePage === true
+  singlePageBtn.setAttribute('aria-checked', on ? 'true' : 'false')
+  singlePageBtn.classList.toggle('on', on)
+  viewer.setSinglePage(on)
+}
+
+let outlineEntries: OutlineEntry[] = []
+
+function sidebarMode(): 'thumbs' | 'outline' {
+  return session.sidebar === 'outline' ? 'outline' : 'thumbs'
+}
+
+function applySidebar(): void {
+  const hidden = session.sidebarHidden === true
+  const mode = sidebarMode()
+  const wasOutline = workspace.classList.contains('sidebar-outline')
+  const wasHidden = workspace.classList.contains('sidebar-hidden')
+  workspace.classList.toggle('sidebar-hidden', hidden)
+  workspace.classList.toggle('sidebar-outline', !hidden && mode === 'outline')
+  thumbs.hidden = hidden || mode !== 'thumbs'
+  const hasOutline = outlineEntries.length > 0
+  outlineList.hidden = hidden || mode !== 'outline' || !hasOutline
+  outlineEmpty.hidden = hidden || mode !== 'outline' || hasOutline
+  thumbsFilterBtn.hidden = mode !== 'thumbs'
+  syncThumbBookmarks()
+  if (hidden || mode !== 'thumbs') thumbsEmpty.hidden = true
+  sidebarVisibilityBtn.textContent = hidden ? 'Show sidebar' : 'Hide sidebar'
+  for (const btn of thumbsPop.querySelectorAll<HTMLButtonElement>('[data-sidebar-mode]')) {
+    const on = btn.dataset.sidebarMode === mode
+    btn.setAttribute('aria-checked', on ? 'true' : 'false')
+    btn.classList.toggle('on', on)
+  }
+  const widthChanged =
+    wasOutline !== workspace.classList.contains('sidebar-outline') ||
+    wasHidden !== workspace.classList.contains('sidebar-hidden')
+  if (widthChanged && pdfBytes) viewer.applyZoom(session.zoom / 100)
+}
+
+function appendOutlineNodes(nodes: OutlineEntry[], host: HTMLElement): void {
+  for (const node of nodes) {
+    const group = document.createElement('div')
+    group.className = 'outline-group'
+    const btn = document.createElement('button')
+    btn.type = 'button'
+    btn.className = 'outline-item'
+    btn.textContent = node.title
+    if (node.page != null) {
+      btn.dataset.page = String(node.page)
+      btn.addEventListener('click', () => viewer.scrollToPage(node.page!))
+    } else {
+      btn.disabled = true
+    }
+    group.append(btn)
+    if (node.children.length) {
+      const nested = document.createElement('div')
+      nested.className = 'outline-children'
+      appendOutlineNodes(node.children, nested)
+      group.append(nested)
+    }
+    host.append(group)
+  }
+}
+
+async function renderOutline(): Promise<void> {
+  outlineEntries = await viewer.getOutline()
+  outlineList.replaceChildren()
+  appendOutlineNodes(outlineEntries, outlineList)
+  syncOutlineActive(viewer.visiblePage)
+  applySidebar()
+}
+
+function syncOutlineActive(page: number): void {
+  for (const el of outlineList.querySelectorAll<HTMLButtonElement>('.outline-item')) {
+    el.classList.toggle('active', Number(el.dataset.page) === page)
+  }
+}
+
+function toggleBookmark(page: number): void {
+  const pages = bookmarkedSet()
+  if (pages.has(page)) pages.delete(page)
+  else pages.add(page)
+  session.bookmarkedPages = [...pages].sort((a, b) => a - b)
+  persist()
+  syncThumbBookmarks()
+}
+
+function closeThumbsMenu(): void {
+  thumbsPop.hidden = true
+  thumbsMenuToggle.setAttribute('aria-expanded', 'false')
+}
+
+function openThumbsMenu(): void {
+  const box = thumbsMenuToggle.getBoundingClientRect()
+  thumbsPop.style.top = `${Math.round(box.bottom + 2)}px`
+  thumbsPop.style.left = `${Math.round(box.left)}px`
+  thumbsPop.hidden = false
+  thumbsMenuToggle.setAttribute('aria-expanded', 'true')
+}
 
 function persist(): void {
   saveSession(session)
@@ -255,11 +413,20 @@ function paintPage(view: PageView): void {
     visibleMarks(),
     selectedId,
     (id) => {
-      if (selectedId === id) return
-      dropEmptyText(id)
-      selectedId = id
-      paintAll()
-      buddy.selected()
+      const mark = session.marks.find((m) => m.id === id)
+      const quad = Boolean(mark && 'quads' in mark)
+      if (selectedId !== id) {
+        dropEmptyText(id)
+        selectedId = id
+        paintAll()
+        buddy.selected()
+      }
+      if (quad) {
+        clearPending()
+        placeSelMenuForMark(id)
+        return
+      }
+      hideSelMenu()
       pagesHost
         .querySelector<HTMLElement>(`.mark-text[data-id="${CSS.escape(id)}"] .text-body`)
         ?.focus()
@@ -383,6 +550,8 @@ function renderChrome(): void {
   zoomLabel.textContent = `${Math.round(session.zoom)}%`
   markerSizeEl.hidden = session.tool !== 'marker'
   markerSizeLabel.textContent = String(currentMarkerWidth())
+  syncSinglePage()
+  applySidebar()
 }
 
 type PendingInk = { pageEl: HTMLElement; quads: Quad[]; text: string }
@@ -399,7 +568,11 @@ function clearPending(): void {
   hideSelMenu()
 }
 
-function showSelMenu(rect: DOMRect): void {
+function showSelMenu(rect: DOMRect, canDelete = false): void {
+  const deleteBtn = selMenu.querySelector<HTMLElement>('[data-delete-mark]')
+  const deleteSep = selMenu.querySelector<HTMLElement>('[data-delete-sep]')
+  if (deleteBtn) deleteBtn.hidden = !canDelete
+  if (deleteSep) deleteSep.hidden = !canDelete
   selMenu.hidden = false
   const width = selMenu.offsetWidth
   const height = selMenu.offsetHeight
@@ -409,6 +582,15 @@ function showSelMenu(rect: DOMRect): void {
   left = Math.max(8, Math.min(left, window.innerWidth - width - 8))
   selMenu.style.left = `${left}px`
   selMenu.style.top = `${top}px`
+}
+
+function placeSelMenuForMark(id: string): void {
+  const el = pagesHost.querySelector<HTMLElement>(`.mark[data-id="${CSS.escape(id)}"]`)
+  if (!el) {
+    hideSelMenu()
+    return
+  }
+  showSelMenu(el.getBoundingClientRect(), true)
 }
 
 function rememberSelection(): void {
@@ -425,7 +607,7 @@ function rememberSelection(): void {
   const mapped = selectionToQuads(pageEl, view.viewport)
   if (!mapped?.text.trim()) return
   pendingInk = { pageEl, quads: mapped.quads, text: mapped.text }
-  showSelMenu(selection.getRangeAt(0).getBoundingClientRect())
+  showSelMenu(selection.getRangeAt(0).getBoundingClientRect(), false)
 }
 
 function takePending(): PendingInk | null {
@@ -500,6 +682,11 @@ function shiftMarksAfter(afterPage: number, added: number): void {
   if (added <= 0) return
   for (const mark of session.marks) {
     if (mark.page > afterPage) mark.page += added
+  }
+  if (session.bookmarkedPages?.length) {
+    session.bookmarkedPages = session.bookmarkedPages
+      .map((page) => (page > afterPage ? page + added : page))
+      .sort((a, b) => a - b)
   }
 }
 
@@ -597,9 +784,12 @@ async function openPdf(file: File): Promise<void> {
   session.fileName = file.name
   session.docId = newId()
   session.marks = []
+  session.bookmarkedPages = []
+  session.showBookmarkedOnly = false
   selectedId = null
   undoStack.length = 0
   persist()
+  closeThumbsMenu()
   await savePdfBytes(session.docId, bytes.slice(0))
   await showPdf(bytes)
 }
@@ -609,14 +799,15 @@ async function showPdf(bytes: ArrayBuffer, restored = false): Promise<void> {
   empty.hidden = true
   pagesHost.hidden = false
   viewer.zoom = session.zoom / 100
+  viewer.singlePage = session.singlePage === true
+  outlineEntries = []
+  outlineList.replaceChildren()
+  applySidebar()
   await viewer.load(bytes)
+  await renderOutline()
   renderChrome()
   if (restored) buddy.greet(true)
   else buddy.opened()
-}
-
-function sameInk(mark: Mark): boolean {
-  return mark.kind !== 'text' && mark.kind !== 'marker' && mark.kind !== 'image' && mark.kind === session.tool
 }
 
 function snapshotMarks(): void {
@@ -629,26 +820,8 @@ function applyInk(pageEl: HTMLElement, mapped: { quads: Quad[]; text: string }):
   const view = viewer.getView(page)
   if (!view) return
 
-  snapshotMarks()
-  const overlapping = session.marks.filter(
-    (m) => sameInk(m) && m.page === page && markOverlapsQuads(m, mapped.quads),
-  )
-  if (overlapping.length > 0) {
-    session.marks = session.marks.filter((m) => !overlapping.some((hit) => hit.id === m.id))
-    const toggling = overlapping.some(
-      (m) => 'quads' in m && roughlySameRegion(m.quads, mapped.quads),
-    )
-    if (toggling) {
-      selectedId = null
-      persist()
-      paintPage(view)
-      renderChrome()
-      buddy.deleted()
-      return
-    }
-  }
-
   if (session.tool === 'text' || session.tool === 'marker') return
+  snapshotMarks()
   session.marks.push({
     id: newId(),
     kind: session.tool,
@@ -661,30 +834,19 @@ function applyInk(pageEl: HTMLElement, mapped: { quads: Quad[]; text: string }):
   persist()
   paintPage(view)
   renderChrome()
+  if (selectedId) placeSelMenuForMark(selectedId)
   buddy.marked(session.tool, session.marks.length)
 }
 
-function removeMarkAt(clientX: number, clientY: number): void {
-  if (session.tool === 'text' || session.tool === 'marker') return
-  const el = document.elementFromPoint(clientX, clientY)
-  const pageEl = el?.closest<HTMLElement>('.page')
-  if (!pageEl) return
+function inkAtPoint(pageEl: HTMLElement, clientX: number, clientY: number): string | null {
   const page = Number(pageEl.dataset.page)
   const view = viewer.getView(page)
-  if (!view) return
+  if (!view) return null
   const pt = clientPointToPdf(pageEl, view.viewport, clientX, clientY)
-  const hit = session.marks.find(
-    (m) =>
-      sameInk(m) && m.page === page && 'quads' in m && pointInQuads(pt.x, pt.y, m.quads),
+  const hit = [...session.marks].reverse().find(
+    (m) => m.page === page && 'quads' in m && pointInQuads(pt.x, pt.y, m.quads),
   )
-  if (!hit) return
-  snapshotMarks()
-  session.marks = session.marks.filter((m) => m.id !== hit.id)
-  selectedId = null
-  persist()
-  paintPage(view)
-  renderChrome()
-  buddy.deleted()
+  return hit?.id ?? null
 }
 
 function addTextMark(event: PointerEvent): void {
@@ -726,6 +888,7 @@ function addTextMark(event: PointerEvent): void {
 
 function clearSelection(): void {
   const pruned = dropEmptyText()
+  hideSelMenu()
   if (!selectedId && !pruned) return
   selectedId = null
   if (pruned) persist()
@@ -797,6 +960,7 @@ pageFileInput.addEventListener('change', () => {
 insertToggle.addEventListener('click', (e) => {
   e.stopPropagation()
   if (!pdfBytes) return
+  closeThumbsMenu()
   insertPop.hidden = !insertPop.hidden
   insertToggle.setAttribute('aria-expanded', insertPop.hidden ? 'false' : 'true')
 })
@@ -811,10 +975,51 @@ insertPop.addEventListener('click', (e) => {
   else if (action === 'blank') void insertBlank()
 })
 
+thumbsMenuToggle.addEventListener('click', (e) => {
+  e.stopPropagation()
+  closeInsertMenu()
+  if (thumbsPop.hidden) openThumbsMenu()
+  else closeThumbsMenu()
+})
+
+thumbsFilterBtn.addEventListener('click', () => {
+  session.showBookmarkedOnly = !session.showBookmarkedOnly
+  persist()
+  applySidebar()
+  closeThumbsMenu()
+})
+
+singlePageBtn.addEventListener('click', () => {
+  session.singlePage = !session.singlePage
+  persist()
+  syncSinglePage()
+  closeThumbsMenu()
+})
+
+thumbsPop.addEventListener('click', (e) => {
+  const modeBtn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-sidebar-mode]')
+  if (modeBtn?.dataset.sidebarMode === 'thumbs' || modeBtn?.dataset.sidebarMode === 'outline') {
+    session.sidebar = modeBtn.dataset.sidebarMode
+    session.sidebarHidden = false
+    persist()
+    applySidebar()
+    closeThumbsMenu()
+    return
+  }
+  if ((e.target as HTMLElement).closest('[data-sidebar-visibility]')) {
+    session.sidebarHidden = !session.sidebarHidden
+    persist()
+    applySidebar()
+    closeThumbsMenu()
+  }
+})
+
 document.addEventListener('pointerdown', (e) => {
   const t = e.target as HTMLElement
   if (t.closest('.insert-wrap')) return
   closeInsertMenu()
+  if (t.closest('.thumbs-header, .thumbs-pop')) return
+  closeThumbsMenu()
 })
 
 function addInkDot(host: HTMLElement, preset: (typeof PRESET_COLORS)[number]): void {
@@ -846,6 +1051,10 @@ app.querySelector('[data-marker-size="up"]')?.addEventListener('click', () => st
 for (const btn of selMenu.querySelectorAll<HTMLButtonElement>('[data-apply]')) {
   btn.addEventListener('click', () => setTool(btn.dataset.apply as Tool))
 }
+selMenu.querySelector('[data-delete-mark]')?.addEventListener('click', () => {
+  deleteSelected()
+  hideSelMenu()
+})
 
 formatBar.addEventListener('mousedown', (e) => {
   const target = e.target as HTMLElement
@@ -882,7 +1091,7 @@ downloadBtn.addEventListener('click', () => {
 picker.addEventListener('input', () => setColor(colorFromHex(picker.value)))
 
 pagesHost.addEventListener('mouseup', (e) => {
-  if ((e.target as HTMLElement).closest('textarea, button, input, .buddy, .mark-text, .mark-image, .sel-menu')) return
+  if ((e.target as HTMLElement).closest('textarea, button, input, .buddy, .mark, .sel-menu')) return
   const { clientX, clientY } = e
   window.setTimeout(() => {
     if (session.tool === 'text' || session.tool === 'marker') return
@@ -896,6 +1105,23 @@ pagesHost.addEventListener('mouseup', (e) => {
     const pageEl =
       (word ? pageFromNode(word.startContainer) : null) ??
       (e.target as HTMLElement).closest<HTMLElement>('.page')
+    if (pageEl) {
+      const existing = inkAtPoint(pageEl, clientX, clientY)
+      if (existing) {
+        const mark = session.marks.find((m) => m.id === existing)
+        if (mark && 'quads' in mark) {
+          if (selectedId !== existing) {
+            dropEmptyText(existing)
+            selectedId = existing
+            paintAll()
+            buddy.selected()
+          }
+          placeSelMenuForMark(existing)
+          renderChrome()
+          return
+        }
+      }
+    }
     if (word && pageEl) {
       const view = viewer.getView(Number(pageEl.dataset.page))
       const mapped = view ? rangeToQuads(word, pageEl, view.viewport) : null
@@ -904,9 +1130,7 @@ pagesHost.addEventListener('mouseup', (e) => {
         return
       }
     }
-    const before = session.marks.length
-    removeMarkAt(clientX, clientY)
-    if (session.marks.length === before) clearSelection()
+    clearSelection()
   }, 0)
 })
 function beginMarker(e: PointerEvent): void {
@@ -1010,6 +1234,15 @@ document.addEventListener('keydown', (e) => {
   }
   if (!e.metaKey && !e.ctrlKey && !e.altKey && !isTyping(e.target)) {
     if (
+      session.singlePage &&
+      (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'PageUp' || e.key === 'PageDown')
+    ) {
+      e.preventDefault()
+      if (e.key === 'ArrowLeft' || e.key === 'PageUp') viewer.prevPage()
+      else viewer.nextPage()
+      return
+    }
+    if (
       (e.key === '[' || e.key === ']') &&
       (session.tool === 'marker' || session.marks.some((m) => m.id === selectedId && m.kind === 'marker'))
     ) {
@@ -1055,13 +1288,16 @@ document.addEventListener('keydown', (e) => {
 
 const viewerEl = app.querySelector<HTMLElement>('.viewer')!
 viewerEl.addEventListener('scroll', () => {
-  if (!pendingInk) return
-  const selection = document.getSelection()
-  if (selection && !selection.isCollapsed && selection.rangeCount > 0) {
-    showSelMenu(selection.getRangeAt(0).getBoundingClientRect())
-    return
+  if (pendingInk) {
+    const selection = document.getSelection()
+    if (selection && !selection.isCollapsed && selection.rangeCount > 0) {
+      showSelMenu(selection.getRangeAt(0).getBoundingClientRect(), false)
+      return
+    }
+    clearPending()
   }
-  clearPending()
+  const selected = selectedId ? session.marks.find((m) => m.id === selectedId) : undefined
+  if (selected && 'quads' in selected) placeSelMenuForMark(selected.id)
 }, { passive: true })
 viewerEl.addEventListener('pointerdown', (e) => {
   const t = e.target as HTMLElement
@@ -1072,10 +1308,17 @@ viewerEl.addEventListener(
   'wheel',
   (event) => {
     const e = event as WheelEvent
-    if (!(e.metaKey || e.ctrlKey)) return
-    e.preventDefault()
-    const step = e.deltaY > 0 ? -10 : 10
-    setZoom(session.zoom + step)
+    if (e.metaKey || e.ctrlKey) {
+      e.preventDefault()
+      const step = e.deltaY > 0 ? -10 : 10
+      setZoom(session.zoom + step)
+      return
+    }
+    if (!session.singlePage || e.deltaY === 0) return
+    const atTop = viewerEl.scrollTop <= 0
+    const atBottom = viewerEl.scrollTop + viewerEl.clientHeight >= viewerEl.scrollHeight - 1
+    if (e.deltaY > 0 && atBottom && viewer.nextPage()) e.preventDefault()
+    else if (e.deltaY < 0 && atTop && viewer.prevPage()) e.preventDefault()
   },
   { passive: false },
 )

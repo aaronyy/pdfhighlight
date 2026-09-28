@@ -360,6 +360,15 @@ html, body, #app {
 
 .sel-menu button:hover { background: var(--soft); }
 
+.sel-menu button[hidden],
+.sel-menu .sel-sep[hidden] { display: none; }
+
+.sel-menu button svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+}
+
 .sel-sep {
   width: 1px;
   align-self: stretch;
@@ -386,21 +395,231 @@ html, body, #app {
   min-height: 0;
 }
 
+.workspace.sidebar-outline {
+  grid-template-columns: 220px 1fr;
+}
+
+.workspace.sidebar-hidden {
+  grid-template-columns: 36px 1fr;
+}
+
 .thumbs {
   background: var(--panel);
   border-right: 1px solid var(--line);
-  overflow: auto;
-  padding: 16px 12px;
+  overflow: visible;
+  padding: 8px 8px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  position: relative;
+  z-index: 3;
+}
+
+.workspace.sidebar-hidden .thumbs {
+  overflow: visible;
+  padding: 8px 4px;
+  position: relative;
+  z-index: 5;
+}
+
+.thumbs-header {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 0 4px;
+  background: var(--panel);
+  flex: 0 0 auto;
+}
+
+.workspace.sidebar-hidden .thumbs-header {
+  justify-content: center;
+}
+
+.thumbs-menu-btn {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+.thumbs-menu-btn:hover {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.thumbs-menu-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.thumbs-pop {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 196px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.thumbs-pop[hidden] { display: none; }
+
+.thumbs-pop-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line);
+}
+
+.thumbs-pop button {
+  width: 100%;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.thumbs-pop button:hover { background: var(--soft); }
+
+.thumbs-pop button[hidden] { display: none; }
+
+.thumbs-check {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  background: #fff;
+  position: relative;
+}
+
+.thumbs-pop button.on .thumbs-check {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
+.thumbs-pop button.on .thumbs-check::after {
+  content: '';
+  position: absolute;
+  left: 3.5px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
+
+.thumbs-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  align-items: center;
+  padding: 0 4px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
-.thumb {
-  border: 0;
-  background: none;
+.thumbs-list[hidden] { display: none; }
+
+.thumbs-empty {
+  margin: 8px 4px 0;
   padding: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.thumbs-empty[hidden] { display: none; }
+
+.outline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: 0 2px 8px;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.outline-list[hidden] { display: none; }
+
+.outline-children {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-left: 10px;
+}
+
+.outline-item {
+  width: 100%;
+  min-height: 26px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: left;
   cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outline-item:hover { background: var(--soft); }
+
+.outline-item.active {
+  background: var(--soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.outline-item:disabled {
+  cursor: default;
+  color: var(--muted);
+}
+
+.outline-empty {
+  margin: 8px 4px 0;
+  padding: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.outline-empty[hidden] { display: none; }
+
+.thumb {
+  position: relative;
+  padding: 0;
   color: var(--muted);
   font: inherit;
   font-size: 11px;
@@ -408,18 +627,93 @@ html, body, #app {
   flex-direction: column;
   align-items: center;
   gap: 6px;
+  width: 100%;
+}
+
+.thumb-media {
+  position: relative;
+  width: 48px;
 }
 
 .thumb-frame {
   width: 48px;
+  padding: 0;
+  margin: 0;
   background: var(--soft);
   border-radius: 6px;
   border: 1px solid var(--line);
   overflow: hidden;
+  cursor: pointer;
+  display: block;
+  font: inherit;
+  color: inherit;
+}
+
+.thumb-label {
+  border: 0;
+  background: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
 }
 
 .thumb.active { color: var(--ink); }
 .thumb.active .thumb-frame { border-color: var(--ink); }
+
+.thumb-star {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  z-index: 1;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--muted);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.thumb:hover .thumb-star,
+.thumb:focus-within .thumb-star,
+.thumb.bookmarked .thumb-star {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.thumb-star svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+
+.thumb.bookmarked .thumb-star {
+  color: #c9a227;
+}
+
+.thumb.bookmarked .thumb-star svg {
+  fill: currentColor;
+  stroke: currentColor;
+}
+
+.thumb-star:hover {
+  color: var(--ink);
+  background: #fff;
+}
 
 .thumb img {
   display: block;
@@ -427,6 +721,7 @@ html, body, #app {
   height: 100%;
   object-fit: contain;
   background: #fff;
+  pointer-events: none;
 }
 
 .viewer {
@@ -469,6 +764,15 @@ html, body, #app {
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+
+.pages.single-page {
+  min-height: 100%;
+  justify-content: center;
+}
+
+.pages.single-page .page[hidden] {
+  display: none;
 }
 
 .page {

@@ -18,7 +18,21 @@ function emptySession(): Session {
     marks: [],
     docId: '',
     zoom: 100,
+    bookmarkedPages: [],
+    showBookmarkedOnly: false,
+    singlePage: false,
+    sidebar: 'thumbs',
+    sidebarHidden: false,
   }
+}
+
+function normalizeBookmarks(raw: unknown): number[] {
+  if (!Array.isArray(raw)) return []
+  const pages = new Set<number>()
+  for (const value of raw) {
+    if (typeof value === 'number' && Number.isInteger(value) && value > 0) pages.add(value)
+  }
+  return [...pages].sort((a, b) => a - b)
 }
 
 export function loadSession(): Session {
@@ -37,6 +51,11 @@ export function loadSession(): Session {
       textWidth: typeof parsed.textWidth === 'number' && parsed.textWidth > 0 ? parsed.textWidth : undefined,
       textFontSize: typeof parsed.textFontSize === 'number' && parsed.textFontSize > 0 ? parsed.textFontSize : undefined,
       markerWidth: typeof parsed.markerWidth === 'number' && parsed.markerWidth > 0 ? parsed.markerWidth : undefined,
+      bookmarkedPages: normalizeBookmarks(parsed.bookmarkedPages),
+      showBookmarkedOnly: parsed.showBookmarkedOnly === true,
+      singlePage: parsed.singlePage === true,
+      sidebar: parsed.sidebar === 'outline' ? 'outline' : 'thumbs',
+      sidebarHidden: parsed.sidebarHidden === true,
     }
   } catch {
     return emptySession()

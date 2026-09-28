@@ -68,6 +68,16 @@ export type Session = {
   textFontSize?: number
   /** Last marker nib size in PDF points. */
   markerWidth?: number
+  /** 1-based page numbers starred in the thumb rail. */
+  bookmarkedPages?: number[]
+  /** When true, the thumb rail only lists bookmarked pages. */
+  showBookmarkedOnly?: boolean
+  /** When true, the viewer shows one page at a time (Preview-style). */
+  singlePage?: boolean
+  /** Sidebar pane: page thumbnails or the PDF table of contents. */
+  sidebar?: 'thumbs' | 'outline'
+  /** When true, the rail collapses to the options button. */
+  sidebarHidden?: boolean
 }
 
 export const MARKER_WIDTHS = [4, 8, 14, 24, 36, 52] as const

@@ -27,6 +27,18 @@ export type PageView = {
   el: HTMLElement
 }
 
+export type OutlineEntry = {
+  title: string
+  page: number | null
+  children: OutlineEntry[]
+}
+
+type PdfOutlineNode = {
+  title?: string
+  dest?: string | unknown[] | null
+  items?: PdfOutlineNode[]
+}
+
 export class PdfViewer {
   private pdf: PDFDocumentProxy | null = null
   private pages = new Map<number, PageView>()
@@ -37,22 +49,27 @@ export class PdfViewer {
   private thumbs: HTMLElement
   private onPagesReady: (views: PageView[]) => void
   private onVisiblePage: (page: number) => void
+  private onToggleBookmark: (page: number) => void
   private fitScale = 1
   private paintGeneration = 0
+  private outlineCache: OutlineEntry[] | null = null
   zoom = 1
   scale = 1.2
   visiblePage = 1
+  singlePage = false
 
   constructor(
     host: HTMLElement,
     thumbs: HTMLElement,
     onPagesReady: (views: PageView[]) => void,
     onVisiblePage: (page: number) => void,
+    onToggleBookmark: (page: number) => void,
   ) {
     this.host = host
     this.thumbs = thumbs
     this.onPagesReady = onPagesReady
     this.onVisiblePage = onVisiblePage
+    this.onToggleBookmark = onToggleBookmark
   }
 
   async load(data: ArrayBuffer): Promise<number> {
@@ -71,6 +88,7 @@ export class PdfViewer {
     this.host.replaceChildren()
     this.thumbs.replaceChildren()
     this.pages.clear()
+    this.outlineCache = null
     this.visiblePage = 1
 
     const count = this.pdf.numPages
@@ -90,6 +108,14 @@ export class PdfViewer {
 
     this.observer = new IntersectionObserver(
       (entries) => {
+        if (this.singlePage) {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue
+            const n = Number((entry.target as HTMLElement).dataset.page)
+            void this.renderPage(n)
+          }
+          return
+        }
         const visible = entries
           .filter((e) => e.isIntersecting)
           .map((e) => Number((e.target as HTMLElement).dataset.page))
@@ -107,10 +133,11 @@ export class PdfViewer {
     )
     for (const view of this.pages.values()) this.observer.observe(view.el)
 
+    this.applyLayout()
     this.onPagesReady([...this.pages.values()])
     // Paint the first screen immediately — IO can miss the initial layout frame.
-    void this.renderPage(1)
-    if (count > 1) void this.renderPage(2)
+    void this.renderPage(this.visiblePage)
+    if (!this.singlePage && count > 1) void this.renderPage(2)
     return count
   }
 
@@ -122,8 +149,104 @@ export class PdfViewer {
     return [...this.pages.values()]
   }
 
+  async getOutline(): Promise<OutlineEntry[]> {
+    if (this.outlineCache) return this.outlineCache
+    if (!this.pdf) return []
+    const raw = (await this.pdf.getOutline()) as PdfOutlineNode[] | null
+    this.outlineCache = await this.mapOutline(raw ?? [])
+    return this.outlineCache
+  }
+
+  private async mapOutline(nodes: PdfOutlineNode[]): Promise<OutlineEntry[]> {
+    const out: OutlineEntry[] = []
+    for (const node of nodes) {
+      out.push({
+        title: (node.title ?? '').trim() || 'Untitled',
+        page: await this.pageFromDest(node.dest),
+        children: await this.mapOutline(node.items ?? []),
+      })
+    }
+    return out
+  }
+
+  private async pageFromDest(dest: string | unknown[] | null | undefined): Promise<number | null> {
+    if (!this.pdf || dest == null) return null
+    let explicit: unknown[] | null = null
+    if (typeof dest === 'string') {
+      try {
+        explicit = await this.pdf.getDestination(dest)
+      } catch {
+        return null
+      }
+    } else if (Array.isArray(dest)) {
+      explicit = dest
+    }
+    if (!explicit?.length) return null
+    const ref = explicit[0]
+    try {
+      if (typeof ref === 'object' && ref) {
+        return (await this.pdf.getPageIndex(ref as { num: number; gen: number })) + 1
+      }
+      if (typeof ref === 'number' && Number.isInteger(ref) && ref >= 0) {
+        return ref + 1
+      }
+    } catch {
+      return null
+    }
+    return null
+  }
+
   scrollToPage(page: number): void {
-    this.pages.get(page)?.el.scrollIntoView({ block: 'start' })
+    const n = Math.min(this.pages.size, Math.max(1, page))
+    if (!this.pages.has(n)) return
+    this.visiblePage = n
+    if (this.singlePage) {
+      this.applyLayout()
+      this.onVisiblePage(n)
+      void this.renderPage(n)
+      const scroller = this.host.closest('.viewer')
+      if (scroller) scroller.scrollTop = 0
+      return
+    }
+    this.pages.get(n)?.el.scrollIntoView({ block: 'start' })
+  }
+
+  setSinglePage(on: boolean): void {
+    const changed = this.singlePage !== on
+    this.singlePage = on
+    this.host.classList.toggle('single-page', on)
+    if (this.pages.size === 0) return
+    this.applyLayout()
+    if (!changed) return
+    this.onVisiblePage(this.visiblePage)
+    void this.renderPage(this.visiblePage)
+    const scroller = this.host.closest('.viewer')
+    if (on) {
+      if (scroller) scroller.scrollTop = 0
+    } else {
+      this.pages.get(this.visiblePage)?.el.scrollIntoView({ block: 'start' })
+    }
+  }
+
+  nextPage(): boolean {
+    if (this.visiblePage >= this.pages.size) return false
+    this.scrollToPage(this.visiblePage + 1)
+    return true
+  }
+
+  prevPage(): boolean {
+    if (this.visiblePage <= 1) return false
+    this.scrollToPage(this.visiblePage - 1)
+    return true
+  }
+
+  private applyLayout(): void {
+    this.host.classList.toggle('single-page', this.singlePage)
+    for (const view of this.pages.values()) {
+      const show = !this.singlePage || view.pageNumber === this.visiblePage
+      view.el.hidden = !show
+      view.el.style.marginBottom = this.singlePage ? '0' : `${PAGE_GAP}px`
+    }
   }
 
   private computeFitScale(pageWidth: number, pageHeight: number): number {
@@ -159,6 +282,7 @@ export class PdfViewer {
     }
     this.onPagesReady([...this.pages.values()])
     for (const view of this.pages.values()) {
+      if (view.el.hidden) continue
       const box = view.el.getBoundingClientRect()
       const hostBox = this.host.getBoundingClientRect()
       if (box.bottom > hostBox.top - 400 && box.top < hostBox.bottom + 400) {
@@ -186,24 +310,63 @@ export class PdfViewer {
   }
 
   private createThumb(n: number, width: number, height: number): HTMLElement {
-    const btn = document.createElement('button')
-    btn.type = 'button'
-    btn.className = 'thumb'
-    btn.dataset.page = String(n)
-    const frame = document.createElement('div')
+    const wrap = document.createElement('div')
+    wrap.className = 'thumb'
+    wrap.dataset.page = String(n)
+    const media = document.createElement('div')
+    media.className = 'thumb-media'
+    const frame = document.createElement('button')
+    frame.type = 'button'
     frame.className = 'thumb-frame'
     frame.style.aspectRatio = `${width} / ${height}`
-    const label = document.createElement('span')
+    frame.setAttribute('aria-label', `Go to page ${n}`)
+    frame.addEventListener('click', () => this.scrollToPage(n))
+    const star = document.createElement('button')
+    star.type = 'button'
+    star.className = 'thumb-star'
+    star.title = 'Bookmark page'
+    star.setAttribute('aria-label', `Bookmark page ${n}`)
+    star.setAttribute('aria-pressed', 'false')
+    star.innerHTML =
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l2.4 4.86 5.36.78-3.88 3.78.92 5.34L12 16.9l-4.8 2.52.92-5.34-3.88-3.78 5.36-.78L12 3.6z"/></svg>'
+    star.addEventListener('click', (e) => {
+      e.stopPropagation()
+      this.onToggleBookmark(n)
+    })
+    media.append(frame, star)
+    const label = document.createElement('button')
+    label.type = 'button'
+    label.className = 'thumb-label'
     label.textContent = String(n)
-    btn.append(frame, label)
-    btn.addEventListener('click', () => this.scrollToPage(n))
-    return btn
+    label.setAttribute('aria-label', `Go to page ${n}`)
+    label.addEventListener('click', () => this.scrollToPage(n))
+    wrap.append(media, label)
+    return wrap
   }
 
   setActiveThumb(page: number): void {
     for (const el of this.thumbs.querySelectorAll('.thumb')) {
       el.classList.toggle('active', Number((el as HTMLElement).dataset.page) === page)
     }
+  }
+
+  syncThumbBookmarks(bookmarked: ReadonlySet<number>, showOnly: boolean): void {
+    let visible = 0
+    for (const el of this.thumbs.querySelectorAll<HTMLElement>('.thumb')) {
+      const page = Number(el.dataset.page)
+      const on = bookmarked.has(page)
+      el.classList.toggle('bookmarked', on)
+      const star = el.querySelector<HTMLButtonElement>('.thumb-star')
+      if (star) {
+        star.setAttribute('aria-pressed', on ? 'true' : 'false')
+        star.title = on ? 'Remove bookmark' : 'Bookmark page'
+      }
+      const hide = showOnly && !on
+      el.hidden = hide
+      if (!hide) visible++
+    }
+    const empty = this.thumbs.parentElement?.querySelector<HTMLElement>('.thumbs-empty')
+    if (empty) empty.hidden = !(showOnly && visible === 0)
   }
 
   private async renderPage(n: number): Promise<void> {
@@ -288,5 +451,6 @@ export class PdfViewer {
     void this.pdf?.cleanup()
     this.pdf = null
     this.pages.clear()
+    this.outlineCache = null
   }
 }
