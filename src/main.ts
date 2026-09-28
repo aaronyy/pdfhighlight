@@ -51,11 +51,14 @@ app.innerHTML = `
     <header class="toolbar">
       <div class="brand">
         <img class="brand-mark" src="${import.meta.env.BASE_URL}favicon-180.png" alt="" />
-        <div>
+        <div class="brand-text">
           <h1>Supervillian Highlighter</h1>
           <p class="file-name" data-file>No file</p>
         </div>
       </div>
+      <button type="button" class="thumbs-menu-btn" data-thumbs-menu-toggle aria-label="Sidebar options" aria-haspopup="menu" aria-expanded="false" title="Options">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>
+      </button>
       <div class="format-bar">
         <div class="tool-group" role="toolbar" aria-label="Marks">
           <button type="button" data-tool="highlight" data-hotkey="H" aria-keyshortcuts="H" title="Highlight">
@@ -110,11 +113,6 @@ app.innerHTML = `
     </header>
     <div class="workspace">
       <aside class="thumbs">
-        <div class="thumbs-header">
-          <button type="button" class="thumbs-menu-btn" data-thumbs-menu-toggle aria-label="Thumbnail options" aria-haspopup="menu" aria-expanded="false" title="Options">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg>
-          </button>
-        </div>
         <div class="thumbs-list" data-thumbs-list></div>
         <p class="thumbs-empty" hidden>Star pages to filter</p>
         <div class="outline-list" data-outline-list hidden></div>
@@ -544,6 +542,7 @@ function renderChrome(): void {
   inkCustom.classList.toggle('on', !matched)
   inkCustom.style.background = matched ? '' : hex
   fileLabel.textContent = session.fileName || 'No file'
+  fileLabel.title = session.fileName || ''
   downloadBtn.disabled = !pdfBytes
   insertToggle.disabled = !pdfBytes
   undoBtn.disabled = undoStack.length === 0
@@ -1018,7 +1017,7 @@ document.addEventListener('pointerdown', (e) => {
   const t = e.target as HTMLElement
   if (t.closest('.insert-wrap')) return
   closeInsertMenu()
-  if (t.closest('.thumbs-header, .thumbs-pop')) return
+  if (t.closest('[data-thumbs-menu-toggle], .thumbs-pop')) return
   closeThumbsMenu()
 })
 
