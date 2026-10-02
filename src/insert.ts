@@ -41,6 +41,15 @@ export async function embedRaster(pdf: PDFDocument, blob: Blob): Promise<PDFImag
   return pdf.embedPng(await rasterPngBytes(blob))
 }
 
+export async function createBlankPdf(): Promise<ArrayBuffer> {
+  const pdf = await PDFDocument.create()
+  pdf.addPage([612, 792])
+  const out = await pdf.save()
+  const bytes = new ArrayBuffer(out.byteLength)
+  new Uint8Array(bytes).set(out)
+  return bytes
+}
+
 export async function insertBlankPage(bytes: ArrayBuffer, afterPage: number): Promise<Uint8Array> {
   const pdf = await PDFDocument.load(bytes.slice(0), { ignoreEncryption: true })
   const pages = pdf.getPages()

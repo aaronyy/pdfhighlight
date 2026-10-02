@@ -1,4 +1,4 @@
-import type { Color, Session, Tool } from './types'
+import type { Color, DocTab, Session, Tool } from './types'
 import { DEFAULT_COLOR } from './types'
 
 const LS_KEY = 'pdfhighlight:doc'
@@ -17,6 +17,8 @@ function emptySession(): Session {
     color: { ...DEFAULT_COLOR },
     marks: [],
     docId: '',
+    tabs: [],
+    activeTabId: '',
     zoom: 100,
     bookmarkedPages: [],
     showBookmarkedOnly: false,
@@ -35,18 +37,58 @@ function normalizeBookmarks(raw: unknown): number[] {
   return [...pages].sort((a, b) => a - b)
 }
 
+function tabTitle(fileName: string): string {
+  const base = fileName.replace(/\.pdf$/i, '').trim()
+  return base || 'Document'
+}
+
+function normalizeTab(raw: unknown): DocTab | null {
+  if (!raw || typeof raw !== 'object') return null
+  const tab = raw as Partial<DocTab>
+  if (typeof tab.id !== 'string' || !tab.id) return null
+  if (typeof tab.docId !== 'string' || !tab.docId) return null
+  const fileName = typeof tab.fileName === 'string' ? tab.fileName : ''
+  const name = typeof tab.name === 'string' && tab.name.trim() ? tab.name.trim() : tabTitle(fileName)
+  return {
+    id: tab.id,
+    name,
+    docId: tab.docId,
+    fileName,
+    marks: Array.isArray(tab.marks) ? tab.marks : [],
+    bookmarkedPages: normalizeBookmarks(tab.bookmarkedPages),
+    showBookmarkedOnly: tab.showBookmarkedOnly === true,
+  }
+}
+
+function withActiveTab(session: Session): Session {
+  const active = session.tabs.find((tab) => tab.id === session.activeTabId) ?? session.tabs[0]
+  if (!active) {
+    session.activeTabId = ''
+    return session
+  }
+  session.activeTabId = active.id
+  session.docId = active.docId
+  session.fileName = active.fileName
+  session.marks = active.marks
+  session.bookmarkedPages = active.bookmarkedPages
+  session.showBookmarkedOnly = active.showBookmarkedOnly
+  return session
+}
+
 export function loadSession(): Session {
   try {
     const raw = localStorage.getItem(LS_KEY)
     if (!raw) return emptySession()
     const parsed = JSON.parse(raw) as Session
     if (!parsed || typeof parsed !== 'object') return emptySession()
-    return {
+    const session: Session = {
       fileName: parsed.fileName ?? '',
       tool: (parsed.tool as Tool) || 'highlight',
       color: parsed.color ?? { ...DEFAULT_COLOR },
       marks: Array.isArray(parsed.marks) ? parsed.marks : [],
       docId: parsed.docId ?? '',
+      tabs: Array.isArray(parsed.tabs) ? parsed.tabs.map(normalizeTab).filter((tab): tab is DocTab => Boolean(tab)) : [],
+      activeTabId: typeof parsed.activeTabId === 'string' ? parsed.activeTabId : '',
       zoom: typeof parsed.zoom === 'number' ? parsed.zoom : 100,
       textWidth: typeof parsed.textWidth === 'number' && parsed.textWidth > 0 ? parsed.textWidth : undefined,
       textFontSize: typeof parsed.textFontSize === 'number' && parsed.textFontSize > 0 ? parsed.textFontSize : undefined,
@@ -57,6 +99,22 @@ export function loadSession(): Session {
       sidebar: parsed.sidebar === 'outline' ? 'outline' : 'thumbs',
       sidebarHidden: parsed.sidebarHidden === true,
     }
+    if (!session.tabs.length && session.docId) {
+      const id = newId()
+      session.tabs = [
+        {
+          id,
+          name: tabTitle(session.fileName),
+          docId: session.docId,
+          fileName: session.fileName,
+          marks: session.marks,
+          bookmarkedPages: session.bookmarkedPages,
+          showBookmarkedOnly: session.showBookmarkedOnly,
+        },
+      ]
+      session.activeTabId = id
+    }
+    return withActiveTab(session)
   } catch {
     return emptySession()
   }
@@ -146,6 +204,22 @@ export async function loadImageBlob(imageId: string): Promise<Blob | null> {
   } catch (err) {
     console.warn('IndexedDB image load failed', err)
     return null
+  }
+}
+
+export async function deletePdfBytes(docId: string): Promise<void> {
+  if (!docId) return
+  try {
+    const db = await openDb()
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite')
+      tx.objectStore(STORE_NAME).delete(docId)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
+    })
+    db.close()
+  } catch (err) {
+    console.warn('IndexedDB pdf delete failed', err)
   }
 }
 

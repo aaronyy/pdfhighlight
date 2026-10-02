@@ -15,11 +15,12 @@ import {
   wordRangeAt,
 } from './annotate'
 import { downloadAnnotatedPdf } from './export'
-import { insertBlankPage, insertPagesFromFile, isImageFile } from './insert'
+import { createBlankPdf, insertBlankPage, insertPagesFromFile, isImageFile } from './insert'
 import { PdfViewer, type OutlineEntry, type PageView } from './render'
 import { Buddy } from './buddy'
 import {
   deleteImageBlobs,
+  deletePdfBytes,
   loadImageBlob,
   loadPdfBytes,
   loadSession,
@@ -34,6 +35,7 @@ import {
   MARKER_WIDTHS,
   PRESET_COLORS,
   type Color,
+  type DocTab,
   type ImageMark,
   type Mark,
   type MarkerMark,
@@ -97,20 +99,26 @@ app.innerHTML = `
       <span class="save-status" data-saved aria-live="polite">Saved</span>
       <div class="actions">
         <button type="button" class="ghost" data-action="undo" disabled>Undo</button>
-        <div class="insert-wrap">
-          <button type="button" class="ghost" data-insert-toggle disabled>Insert</button>
-          <div class="insert-pop" data-insert-pop hidden>
-            <button type="button" data-insert="photo">Photo on this page</button>
-            <button type="button" data-insert="page-file">Page from file</button>
-            <button type="button" data-insert="blank">Blank page</button>
+        <button type="button" class="primary" data-action="download" disabled>Download</button>
+        <div class="more-wrap">
+          <button type="button" class="ghost more-btn" data-more-toggle aria-label="Open or insert" aria-haspopup="menu" aria-expanded="false" title="More">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
+          </button>
+          <div class="more-pop" data-more-pop hidden role="menu">
+            <button type="button" role="menuitem" data-more="open">Open PDF</button>
+            <button type="button" role="menuitem" data-more="notes">New notes</button>
+            <div class="more-sep" role="separator"></div>
+            <button type="button" role="menuitem" data-more="insert-photo" disabled>Photo on this page</button>
+            <button type="button" role="menuitem" data-more="insert-page" disabled>Page from file</button>
+            <button type="button" role="menuitem" data-more="insert-blank" disabled>Blank page</button>
           </div>
         </div>
-        <label class="btn">Open<input class="hidden-file" type="file" accept="application/pdf" data-open-pdf /></label>
-        <button type="button" class="primary" data-action="download" disabled>Download</button>
+        <input class="hidden-file" type="file" accept="application/pdf" data-open-pdf />
         <input class="hidden-file" type="file" accept="image/*" data-photo-file />
         <input class="hidden-file" type="file" accept="application/pdf,image/*" data-page-file />
       </div>
     </header>
+    <nav class="tab-bar" data-tab-bar hidden></nav>
     <div class="workspace">
       <aside class="thumbs">
         <div class="thumbs-list" data-thumbs-list></div>
@@ -160,16 +168,41 @@ app.innerHTML = `
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v8h-2V9zm4 0h2v8h-2V9zM7 9h2v8H7V9zm-1 11h12l1-12H5l1 12z"/></svg>
       </button>
     </div>
+    <div class="modal" data-name-modal hidden>
+      <div class="modal-card">
+        <h3>Name this notebook</h3>
+        <input class="modal-input" type="text" data-name-input placeholder="Notes" maxlength="80" />
+        <div class="modal-actions">
+          <button type="button" data-name-cancel>Cancel</button>
+          <button type="button" class="primary" data-name-ok>Create</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal" data-download-modal hidden>
+      <div class="modal-card">
+        <h3>Download</h3>
+        <p class="modal-copy">Choose which tabs to save.</p>
+        <div class="download-list" data-download-list></div>
+        <div class="modal-actions">
+          <button type="button" data-download-cancel>Cancel</button>
+          <button type="button" class="primary" data-download-ok>Download</button>
+        </div>
+      </div>
+    </div>
   </div>
 `
 
 const session: Session = loadSession()
 const stacked = session.marks.length
 session.marks = collapseStackedMarks(session.marks)
+const activeTab = session.tabs.find((tab) => tab.id === session.activeTabId)
+if (activeTab) activeTab.marks = session.marks
 if (session.marks.length !== stacked) saveSession(session)
 let pdfBytes: ArrayBuffer | null = null
 let selectedId: string | null = null
 const undoStack: Mark[][] = []
+const undoByTab = new Map<string, Mark[][]>()
+let tabGen = 0
 const imageUrls = new Map<string, string>()
 let draftMarker: MarkerMark | null = null
 let markerPointer: number | null = null
@@ -189,8 +222,14 @@ const singlePageBtn = app.querySelector<HTMLButtonElement>('[data-single-page]')
 const pagesHost = app.querySelector<HTMLElement>('.pages')!
 const empty = app.querySelector<HTMLElement>('.empty')!
 const downloadBtn = app.querySelector<HTMLButtonElement>('[data-action="download"]')!
-const insertToggle = app.querySelector<HTMLButtonElement>('[data-insert-toggle]')!
-const insertPop = app.querySelector<HTMLElement>('[data-insert-pop]')!
+const moreToggle = app.querySelector<HTMLButtonElement>('[data-more-toggle]')!
+const morePop = app.querySelector<HTMLElement>('[data-more-pop]')!
+const tabBar = app.querySelector<HTMLElement>('[data-tab-bar]')!
+const openPdfInput = app.querySelector<HTMLInputElement>('[data-open-pdf]')!
+const nameModal = app.querySelector<HTMLElement>('[data-name-modal]')!
+const nameInput = app.querySelector<HTMLInputElement>('[data-name-input]')!
+const downloadModal = app.querySelector<HTMLElement>('[data-download-modal]')!
+const downloadList = app.querySelector<HTMLElement>('[data-download-list]')!
 const photoFileInput = app.querySelector<HTMLInputElement>('[data-photo-file]')!
 const pageFileInput = app.querySelector<HTMLInputElement>('[data-page-file]')!
 const undoBtn = app.querySelector<HTMLButtonElement>('[data-action="undo"]')!
@@ -339,11 +378,180 @@ function openThumbsMenu(): void {
   thumbsMenuToggle.setAttribute('aria-expanded', 'true')
 }
 
+function tabTitle(fileName: string): string {
+  const base = fileName.replace(/\.pdf$/i, '').trim()
+  return base || 'Document'
+}
+
+function flushActiveTab(): void {
+  const tab = session.tabs.find((item) => item.id === session.activeTabId)
+  if (!tab) return
+  tab.marks = session.marks
+  tab.docId = session.docId
+  tab.fileName = session.fileName
+  tab.bookmarkedPages = session.bookmarkedPages ?? []
+  tab.showBookmarkedOnly = session.showBookmarkedOnly === true
+}
+
+function applyTab(tab: DocTab): void {
+  session.activeTabId = tab.id
+  session.docId = tab.docId
+  session.fileName = tab.fileName
+  session.marks = tab.marks
+  session.bookmarkedPages = tab.bookmarkedPages ?? []
+  session.showBookmarkedOnly = tab.showBookmarkedOnly === true
+}
+
 function persist(): void {
+  flushActiveTab()
   saveSession(session)
   savedEl.classList.add('on')
   window.clearTimeout(savedTimer)
   savedTimer = window.setTimeout(() => savedEl.classList.remove('on'), 1400)
+}
+
+function renderTabs(): void {
+  const show = session.tabs.length > 1
+  tabBar.hidden = !show
+  app.querySelector('.app')?.classList.toggle('has-tabs', show)
+  tabBar.replaceChildren()
+  if (!show) return
+  for (const tab of session.tabs) {
+    const item = document.createElement('div')
+    item.className = 'tab' + (tab.id === session.activeTabId ? ' active' : '')
+    item.setAttribute('role', 'tab')
+    item.ariaSelected = tab.id === session.activeTabId ? 'true' : 'false'
+    const hit = document.createElement('button')
+    hit.type = 'button'
+    hit.className = 'tab-hit'
+    hit.textContent = tab.name
+    hit.title = tab.name
+    hit.addEventListener('click', () => void switchTab(tab.id))
+    const close = document.createElement('button')
+    close.type = 'button'
+    close.className = 'tab-close'
+    close.setAttribute('aria-label', `Close ${tab.name}`)
+    close.textContent = '×'
+    close.addEventListener('click', (e) => {
+      e.stopPropagation()
+      void closeTab(tab.id)
+    })
+    item.append(hit, close)
+    item.addEventListener('auxclick', (e) => {
+      if (e.button === 1) {
+        e.preventDefault()
+        void closeTab(tab.id)
+      }
+    })
+    tabBar.append(item)
+  }
+}
+
+function closeMoreMenu(): void {
+  morePop.hidden = true
+  moreToggle.setAttribute('aria-expanded', 'false')
+}
+
+function closeDialogs(): void {
+  nameModal.hidden = true
+  downloadModal.hidden = true
+}
+
+function askNotesName(): void {
+  closeMoreMenu()
+  nameInput.value = ''
+  nameModal.hidden = false
+  window.setTimeout(() => nameInput.focus(), 0)
+}
+
+function addTab(tab: DocTab): void {
+  flushActiveTab()
+  if (session.activeTabId) undoByTab.set(session.activeTabId, undoStack.map((marks) => marks.map((m) => structuredClone(m))))
+  session.tabs.push(tab)
+  applyTab(tab)
+  selectedId = null
+  undoStack.length = 0
+  closeThumbsMenu()
+  closeMoreMenu()
+}
+
+async function switchTab(id: string): Promise<void> {
+  if (id === session.activeTabId) return
+  const tab = session.tabs.find((item) => item.id === id)
+  if (!tab) return
+  if (session.activeTabId) {
+    flushActiveTab()
+    undoByTab.set(session.activeTabId, undoStack.map((marks) => marks.map((m) => structuredClone(m))))
+  }
+  applyTab(tab)
+  selectedId = null
+  draftMarker = null
+  undoStack.length = 0
+  const saved = undoByTab.get(id)
+  if (saved) undoStack.push(...saved)
+  persist()
+  renderChrome()
+  const gen = ++tabGen
+  const bytes = await loadPdfBytes(tab.docId)
+  if (gen !== tabGen) return
+  if (!bytes) {
+    pdfBytes = null
+    empty.hidden = false
+    pagesHost.hidden = true
+    renderChrome()
+    return
+  }
+  await hydrateImages(tab.marks)
+  await showPdf(bytes, true)
+}
+
+async function closeTab(id: string): Promise<void> {
+  const idx = session.tabs.findIndex((item) => item.id === id)
+  if (idx < 0) return
+  const tab = session.tabs[idx]
+  if (id === session.activeTabId) flushActiveTab()
+  const leftover = imageIdsOf(tab.marks)
+  for (const imageId of leftover) {
+    const url = imageUrls.get(imageId)
+    if (url) {
+      URL.revokeObjectURL(url)
+      imageUrls.delete(imageId)
+    }
+  }
+  void deleteImageBlobs(leftover)
+  void deletePdfBytes(tab.docId)
+  session.tabs.splice(idx, 1)
+  undoByTab.delete(id)
+  if (session.tabs.length === 0) {
+    session.activeTabId = ''
+    session.docId = ''
+    session.fileName = ''
+    session.marks = []
+    session.bookmarkedPages = []
+    session.showBookmarkedOnly = false
+    selectedId = null
+    undoStack.length = 0
+    pdfBytes = null
+    viewer.destroy()
+    pagesHost.replaceChildren()
+    thumbs.replaceChildren()
+    outlineList.replaceChildren()
+    outlineEntries = []
+    empty.hidden = false
+    pagesHost.hidden = true
+    persist()
+    renderChrome()
+    buddy.greet(false)
+    return
+  }
+  if (id === session.activeTabId) {
+    const next = session.tabs[Math.min(idx, session.tabs.length - 1)]
+    session.activeTabId = ''
+    await switchTab(next.id)
+    return
+  }
+  persist()
+  renderChrome()
 }
 
 function setPageToolClass(): void {
@@ -543,14 +751,17 @@ function renderChrome(): void {
   inkCustom.style.background = matched ? '' : hex
   fileLabel.textContent = session.fileName || 'No file'
   fileLabel.title = session.fileName || ''
-  downloadBtn.disabled = !pdfBytes
-  insertToggle.disabled = !pdfBytes
+  downloadBtn.disabled = session.tabs.length === 0
+  for (const btn of morePop.querySelectorAll<HTMLButtonElement>('[data-more^="insert"]')) {
+    btn.disabled = !pdfBytes
+  }
   undoBtn.disabled = undoStack.length === 0
   zoomLabel.textContent = `${Math.round(session.zoom)}%`
   markerSizeEl.hidden = session.tool !== 'marker'
   markerSizeLabel.textContent = String(currentMarkerWidth())
   syncSinglePage()
   applySidebar()
+  renderTabs()
 }
 
 type PendingInk = { pageEl: HTMLElement; quads: Quad[]; text: string }
@@ -653,11 +864,6 @@ function setTool(tool: Tool): void {
   buddy.tool(tool)
 }
 
-function revokeImageUrls(): void {
-  for (const url of imageUrls.values()) URL.revokeObjectURL(url)
-  imageUrls.clear()
-}
-
 function imageIdsOf(marks: Mark[]): string[] {
   return marks.filter((m): m is ImageMark => m.kind === 'image').map((m) => m.imageId)
 }
@@ -687,11 +893,6 @@ function shiftMarksAfter(afterPage: number, added: number): void {
       .map((page) => (page > afterPage ? page + added : page))
       .sort((a, b) => a - b)
   }
-}
-
-function closeInsertMenu(): void {
-  insertPop.hidden = true
-  insertToggle.setAttribute('aria-expanded', 'false')
 }
 
 async function addImageAt(file: File, pageEl: HTMLElement, clientX: number, clientY: number): Promise<void> {
@@ -777,18 +978,34 @@ async function insertFromFile(file: File): Promise<void> {
 async function openPdf(file: File): Promise<void> {
   buddy.opening()
   const bytes = await file.arrayBuffer()
-  const leftover = imageIdsOf(session.marks)
-  revokeImageUrls()
-  void deleteImageBlobs(leftover)
-  session.fileName = file.name
-  session.docId = newId()
-  session.marks = []
-  session.bookmarkedPages = []
-  session.showBookmarkedOnly = false
-  selectedId = null
-  undoStack.length = 0
+  addTab({
+    id: newId(),
+    name: tabTitle(file.name),
+    docId: newId(),
+    fileName: file.name,
+    marks: [],
+    bookmarkedPages: [],
+    showBookmarkedOnly: false,
+  })
   persist()
-  closeThumbsMenu()
+  await savePdfBytes(session.docId, bytes.slice(0))
+  await showPdf(bytes)
+}
+
+async function openNotes(name: string): Promise<void> {
+  buddy.opening()
+  const title = name.trim() || 'Notes'
+  const bytes = await createBlankPdf()
+  addTab({
+    id: newId(),
+    name: title,
+    docId: newId(),
+    fileName: `${title}.pdf`,
+    marks: [],
+    bookmarkedPages: [],
+    showBookmarkedOnly: false,
+  })
+  persist()
   await savePdfBytes(session.docId, bytes.slice(0))
   await showPdf(bytes)
 }
@@ -956,27 +1173,28 @@ pageFileInput.addEventListener('change', () => {
   if (file) void insertFromFile(file)
 })
 
-insertToggle.addEventListener('click', (e) => {
+moreToggle.addEventListener('click', (e) => {
   e.stopPropagation()
-  if (!pdfBytes) return
   closeThumbsMenu()
-  insertPop.hidden = !insertPop.hidden
-  insertToggle.setAttribute('aria-expanded', insertPop.hidden ? 'false' : 'true')
+  morePop.hidden = !morePop.hidden
+  moreToggle.setAttribute('aria-expanded', morePop.hidden ? 'false' : 'true')
 })
 
-insertPop.addEventListener('click', (e) => {
-  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-insert]')
-  if (!btn) return
-  closeInsertMenu()
-  const action = btn.dataset.insert
-  if (action === 'photo') photoFileInput.click()
-  else if (action === 'page-file') pageFileInput.click()
-  else if (action === 'blank') void insertBlank()
+morePop.addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-more]')
+  if (!btn || btn.disabled) return
+  const action = btn.dataset.more
+  closeMoreMenu()
+  if (action === 'open') openPdfInput.click()
+  else if (action === 'notes') askNotesName()
+  else if (action === 'insert-photo') photoFileInput.click()
+  else if (action === 'insert-page') pageFileInput.click()
+  else if (action === 'insert-blank') void insertBlank()
 })
 
 thumbsMenuToggle.addEventListener('click', (e) => {
   e.stopPropagation()
-  closeInsertMenu()
+  closeMoreMenu()
   if (thumbsPop.hidden) openThumbsMenu()
   else closeThumbsMenu()
 })
@@ -1015,10 +1233,13 @@ thumbsPop.addEventListener('click', (e) => {
 
 document.addEventListener('pointerdown', (e) => {
   const t = e.target as HTMLElement
-  if (t.closest('.insert-wrap')) return
-  closeInsertMenu()
+  if (t.closest('.more-wrap')) return
+  closeMoreMenu()
   if (t.closest('[data-thumbs-menu-toggle], .thumbs-pop')) return
   closeThumbsMenu()
+  if (!nameModal.hidden || !downloadModal.hidden) {
+    if (!t.closest('.modal-card')) closeDialogs()
+  }
 })
 
 function addInkDot(host: HTMLElement, preset: (typeof PRESET_COLORS)[number]): void {
@@ -1076,15 +1297,90 @@ app.querySelector('[data-zoom="out"]')?.addEventListener('click', () => setZoom(
 app.querySelector('[data-zoom="in"]')?.addEventListener('click', () => setZoom(session.zoom + 20))
 app.querySelector('[data-zoom="reset"]')?.addEventListener('click', () => setZoom(100))
 
-downloadBtn.addEventListener('click', () => {
-  if (!pdfBytes) {
+function selectedDownloadIds(): string[] {
+  return [...downloadList.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
+    .filter((box) => box.checked)
+    .map((box) => box.value)
+}
+
+function openDownloadModal(): void {
+  closeMoreMenu()
+  flushActiveTab()
+  downloadList.replaceChildren()
+  for (const tab of session.tabs) {
+    const row = document.createElement('label')
+    row.className = 'download-row'
+    const box = document.createElement('input')
+    box.type = 'checkbox'
+    box.value = tab.id
+    box.checked = true
+    const name = document.createElement('span')
+    name.textContent = tab.name
+    row.append(box, name)
+    downloadList.append(row)
+  }
+  downloadModal.hidden = false
+}
+
+async function downloadTabs(ids: string[]): Promise<void> {
+  if (ids.length === 0) {
     buddy.nothingToDownload()
     return
   }
+  flushActiveTab()
   buddy.downloading()
-  void downloadAnnotatedPdf(pdfBytes, session.fileName || 'document.pdf', session.marks).catch(() => {
+  for (const id of ids) {
+    const tab = session.tabs.find((item) => item.id === id)
+    if (!tab) continue
+    const bytes = id === session.activeTabId && pdfBytes ? pdfBytes : await loadPdfBytes(tab.docId)
+    if (!bytes) continue
+    await downloadAnnotatedPdf(bytes, tab.fileName || `${tab.name}.pdf`, tab.marks)
+    await new Promise((resolve) => window.setTimeout(resolve, 180))
+  }
+}
+
+downloadBtn.addEventListener('click', () => {
+  if (session.tabs.length === 0) {
     buddy.nothingToDownload()
-  })
+    return
+  }
+  if (session.tabs.length === 1) {
+    if (!pdfBytes) {
+      buddy.nothingToDownload()
+      return
+    }
+    buddy.downloading()
+    void downloadAnnotatedPdf(pdfBytes, session.fileName || 'document.pdf', session.marks).catch(() => {
+      buddy.nothingToDownload()
+    })
+    return
+  }
+  openDownloadModal()
+})
+
+app.querySelector('[data-download-cancel]')?.addEventListener('click', () => {
+  downloadModal.hidden = true
+})
+app.querySelector('[data-download-ok]')?.addEventListener('click', () => {
+  const ids = selectedDownloadIds()
+  downloadModal.hidden = true
+  void downloadTabs(ids).catch(() => buddy.nothingToDownload())
+})
+app.querySelector('[data-name-cancel]')?.addEventListener('click', () => {
+  nameModal.hidden = true
+})
+app.querySelector('[data-name-ok]')?.addEventListener('click', () => {
+  const name = nameInput.value
+  nameModal.hidden = true
+  void openNotes(name)
+})
+nameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    const name = nameInput.value
+    nameModal.hidden = true
+    void openNotes(name)
+  }
 })
 
 picker.addEventListener('input', () => setColor(colorFromHex(picker.value)))
@@ -1225,6 +1521,14 @@ function isTyping(el: EventTarget | null): boolean {
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
+    if (!nameModal.hidden || !downloadModal.hidden) {
+      closeDialogs()
+      return
+    }
+    if (!morePop.hidden) {
+      closeMoreMenu()
+      return
+    }
     if (!pendingInk && !selectedId) return
     clearPending()
     document.getSelection()?.removeAllRanges()

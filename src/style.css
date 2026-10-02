@@ -28,6 +28,14 @@ html, body, #app {
   height: 100%;
 }
 
+.app.has-tabs {
+  grid-template-rows: auto auto 1fr;
+}
+
+.app.has-tabs .toolbar {
+  border-bottom: 0;
+}
+
 .toolbar {
   position: relative;
   z-index: 30;
@@ -1135,16 +1143,28 @@ html, body, #app {
   right: -4px;
 }
 
-.insert-wrap { position: relative; }
+.more-wrap { position: relative; }
 
-.insert-pop {
+.more-btn {
+  width: 32px;
+  min-width: 32px;
+  padding: 0;
+}
+
+.more-btn svg {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+.more-pop {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
   z-index: 40;
   display: flex;
   flex-direction: column;
-  min-width: 180px;
+  min-width: 196px;
   padding: 4px;
   background: var(--panel);
   border: 1px solid var(--line);
@@ -1152,15 +1172,199 @@ html, body, #app {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
 }
 
-.insert-pop[hidden] { display: none; }
+.more-pop[hidden] { display: none; }
 
-.insert-pop button {
+.more-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line);
+}
+
+.more-pop button {
   width: 100%;
   height: 32px;
   justify-content: flex-start;
   padding: 0 10px;
   font-size: 13px;
 }
+
+.tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 0 16px 8px;
+  background: rgba(255, 255, 255, 0.86);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+
+.tab-bar[hidden] { display: none; }
+
+.tab {
+  display: flex;
+  align-items: center;
+  max-width: 200px;
+  min-width: 72px;
+  height: 28px;
+  padding: 0 4px 0 2px;
+  border-radius: 8px;
+  color: var(--muted);
+  flex: 0 1 auto;
+}
+
+.tab.active {
+  background: var(--soft);
+  color: var(--ink);
+}
+
+.tab-hit {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: -0.01em;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tab-close {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  padding: 0;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.55;
+}
+
+.tab-close:hover {
+  background: #ececec;
+  opacity: 1;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(17, 17, 17, 0.28);
+}
+
+.modal[hidden] { display: none; }
+
+.modal-card {
+  width: min(360px, calc(100vw - 32px));
+  padding: 18px 18px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.16);
+}
+
+.modal-card h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.modal-copy {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.modal-input {
+  width: 100%;
+  margin-top: 14px;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+}
+
+.modal-input:focus {
+  outline: none;
+  border-color: #cfcfcf;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.04);
+}
+
+.download-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 14px;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.download-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.download-row:hover { background: var(--soft); }
+
+.download-row input {
+  accent-color: var(--ink);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 16px;
+}
+
+.modal-actions button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  border-radius: 8px;
+  height: 32px;
+  padding: 0 11px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.modal-actions button:hover { background: var(--soft); }
+
+.modal-actions button.primary {
+  background: var(--ink);
+  color: #fff;
+}
+
+.modal-actions button.primary:hover { background: #2a2a2a; }
 
 .mark-image {
   position: absolute;

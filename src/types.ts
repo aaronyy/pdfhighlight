@@ -55,12 +55,24 @@ export type ImageMark = {
 
 export type Mark = QuadMark | TextMark | MarkerMark | ImageMark
 
+export type DocTab = {
+  id: string
+  name: string
+  docId: string
+  fileName: string
+  marks: Mark[]
+  bookmarkedPages?: number[]
+  showBookmarkedOnly?: boolean
+}
+
 export type Session = {
   fileName: string
   tool: Tool
   color: Color
   marks: Mark[]
   docId: string
+  tabs: DocTab[]
+  activeTabId: string
   zoom: number
   /** Last text-box width in PDF points. The next note starts at this size. */
   textWidth?: number
